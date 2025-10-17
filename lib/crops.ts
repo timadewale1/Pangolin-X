@@ -1,6 +1,6 @@
 export const CROP_OPTIONS = [
   { id: "maize", label: "Maize", img: "https://images.unsplash.com/photo-1508061253142-4f6f2c2b3f4a?q=80&w=900&auto=format&fit=crop" },
-  { id: "cassava", label: "Cassava", img: "https://images.unsplash.com/photo-1567306226416-28f0efdc88ce?q=80&w=900&auto=format&fit=crop" },
+  { id: "cassava", label: "Cassava", img: "https://images.unsplash.com/photo-1579621970563-ebec7560ff5d?q=80&w=900&auto=format&fit=crop" },
   { id: "rice", label: "Rice", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=900&auto=format&fit=crop" },
   { id: "cowpea", label: "Cowpea", img: "https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=900&auto=format&fit=crop" },
   { id: "yam", label: "Yam", img: "https://images.unsplash.com/photo-1601004890684-d8cbf643f5f2?q=80&w=900&auto=format&fit=crop" },
@@ -23,5 +23,24 @@ export const CROP_OPTIONS = [
   { id: "ginger", label: "Ginger", img: "https://images.unsplash.com/photo-1524594154902-0b1f7b4f8d8e?q=80&w=900&auto=format&fit=crop" },
   { id: "rubber", label: "Rubber", img: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=900&auto=format&fit=crop" },
   { id: "sugarcane", label: "Sugarcane", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=900&auto=format&fit=crop" },
-  // ... add more to reach your desired coverage
+  { id: "kola", label: "Kola Nut", img: "https://images.unsplash.com/photo-1597750094408-4b2a2b4a2c5f?q=80&w=900&auto=format&fit=crop" },
+  { id: "pine", label: "Plantain", img: "https://images.unsplash.com/photo-1516685018646-549eb5c4b8a3?q=80&w=900&auto=format&fit=crop" },
+  { id: "tea", label: "Tea", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=900&auto=format&fit=crop" },
+  { id: "coffee", label: "Coffee", img: "https://images.unsplash.com/photo-1516910817561-3d1f8d8f7b73?q=80&w=900&auto=format&fit=crop" },
+  { id: "spinach", label: "Spinach", img: "https://images.unsplash.com/photo-1506806732259-39c2d0268443?q=80&w=900&auto=format&fit=crop" },
+  { id: "lettuce", label: "Lettuce", img: "https://images.unsplash.com/photo-1506089676908-3592f7389d4d?q=80&w=900&auto=format&fit=crop" },
+  { id: "watermelon", label: "Watermelon", img: "https://images.unsplash.com/photo-1509228627152-45f1e2d8b8c9?q=80&w=900&auto=format&fit=crop" },
+  { id: "melon", label: "Melon", img: "https://images.unsplash.com/photo-1514996937319-344454492b37?q=80&w=900&auto=format&fit=crop" },
+  { id: "mango", label: "Mango", img: "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=900&auto=format&fit=crop" },
+  { id: "avocado", label: "Avocado", img: "https://images.unsplash.com/photo-1550258989-9a6f3f95a1b4?q=80&w=900&auto=format&fit=crop" },
+  { id: "eggplant", label: "Eggplant", img: "https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=900&auto=format&fit=crop" },
+  { id: "buckwheat", label: "Buckwheat", img: "https://images.unsplash.com/photo-1524594154902-0b1f7b4f8d8e?q=80&w=900&auto=format&fit=crop" },
+  { id: "barley", label: "Barley", img: "https://images.unsplash.com/photo-1495433324511-bf8e92934d90?q=80&w=900&auto=format&fit=crop" },
+  { id: "oats", label: "Oats", img: "https://images.unsplash.com/photo-1478144592103-25e218a04891?q=80&w=900&auto=format&fit=crop" },
+  { id: "lentil", label: "Lentil", img: "https://images.unsplash.com/photo-1561043433-aaf687c4cf4f?q=80&w=900&auto=format&fit=crop" },
+  { id: "beet", label: "Beetroot", img: "https://images.unsplash.com/photo-1478145046317-39f10e56b5e9?q=80&w=900&auto=format&fit=crop" },
+  { id: "pumpkin", label: "Pumpkin", img: "https://images.unsplash.com/photo-1506806732259-39c2d0268443?q=80&w=900&auto=format&fit=crop" },
+  { id: "herbs", label: "Culinary Herbs", img: "https://images.unsplash.com/photo-1505575976101-1d8b0f3e5f5d?q=80&w=900&auto=format&fit=crop" },
+  { id: "flowers", label: "Cut Flowers", img: "https://images.unsplash.com/photo-1504198453319-5ce911bafcde?q=80&w=900&auto=format&fit=crop" },
+  // end of list
 ];

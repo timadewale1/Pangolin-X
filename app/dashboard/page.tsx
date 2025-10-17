@@ -573,7 +573,7 @@ useEffect(() => {
 
       {/* header/logo centered */}
       <header className="py-8 flex flex-col items-center">
-        <Image src="/logo.png" alt="Pangolin-x logo" width={220} height={60} className="mb-4" />
+        <Image src="https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1600&q=80" alt="Pangolin-x logo" width={220} height={60} className="mb-4" />
         <div className="w-full max-w-5xl mx-auto px-4">
           <div className="bg-white/90 rounded-2xl p-6 flex items-center gap-6 shadow-xl">
             <div>

@@ -1,6 +1,6 @@
 // app/login/page.tsx
 "use client";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
@@ -13,25 +13,26 @@ export default function LoginPage() {
   const [fpEmail, setFpEmail] = useState("");
   const router = useRouter();
 
-  async function login(e:any) {
+  async function login(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     try {
       await signInWithEmailAndPassword(auth, email, password);
       toast.success("Login successful");
       router.push("/dashboard");
-    } catch (err:any) {
-      toast.error(err?.message || "Login failed");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message || "Login failed");
     }
   }
-
-  async function sendReset(e:any) {
+  async function sendReset(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     try {
       await sendPasswordResetEmail(auth, fpEmail);
       toast.success(`Password reset email sent to ${fpEmail}`);
       setShowForgot(false);
-    } catch (err:any) {
-      toast.error(err?.message || "Reset failed");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message || "Reset failed");
     }
   }
 
