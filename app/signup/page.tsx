@@ -1,0 +1,312 @@
+// app/signup/page.tsx
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useForm } from "react-hook-form";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+import { setDoc, doc } from "firebase/firestore";
+import { useRouter } from "next/navigation";
+import { NIGERIA_STATES_LGAS } from "@/lib/nigeriaData";
+import { CROP_OPTIONS } from "@/lib/crops";
+import Loader from "@/components/Loader";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
+/**
+ * Signup page:
+ * - crop selection grid with search (images)
+ * - state & LGA searchable lists under crops (fixed order)
+ * - geolocation with highAccuracy and fallback reverse-geocoding
+ */
+
+type FormData = {
+  name: string;
+  email: string;
+  password: string;
+  phone: string;
+  state: string;
+  lga: string;
+  crops: string[]; // array of crop ids
+};
+
+// const CROP_OPTIONS = [
+//   { id: "maize", label: "Maize", img: "https://images.unsplash.com/photo-1508061253142-4f6f2c2b3f4a?q=80&w=600&auto=format&fit=crop" },
+//   { id: "cassava", label: "Cassava", img: "https://images.unsplash.com/photo-1567306226416-28f0efdc88ce?q=80&w=600&auto=format&fit=crop" },
+//   { id: "rice", label: "Rice", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop" },
+//   { id: "cowpea", label: "Cowpea", img: "https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=600&auto=format&fit=crop" },
+//   { id: "yam", label: "Yam", img: "https://images.unsplash.com/photo-1601004890684-d8cbf643f5f2?q=80&w=600&auto=format&fit=crop" },
+//   { id: "groundnut", label: "Groundnut", img: "https://images.unsplash.com/photo-1518976024611-6d04b6d1b9a5?q=80&w=600&auto=format&fit=crop" },
+//   { id: "soybean", label: "Soybean", img: "https://images.unsplash.com/photo-1592928305769-1bfa56337f1e?q=80&w=600&auto=format&fit=crop" },
+//   { id: "millet", label: "Millet", img: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?q=80&w=600&auto=format&fit=crop" },
+//   { id: "sorghum", label: "Sorghum", img: "https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?q=80&w=600&auto=format&fit=crop" },
+//   { id: "tomato", label: "Tomato", img: "https://images.unsplash.com/photo-1567306226416-28f0efdc88ce?q=80&w=600&auto=format&fit=crop" },
+//   { id: "pepper", label: "Pepper", img: "https://images.unsplash.com/photo-1547517029-22f3b44f4e57?q=80&w=600&auto=format&fit=crop" },
+//   { id: "onion", label: "Onion", img: "https://images.unsplash.com/photo-1506806732259-39c2d0268443?q=80&w=600&auto=format&fit=crop" },
+//   { id: "sweet_potato", label: "Sweet Potato", img: "https://images.unsplash.com/photo-1506806732259-39c2d0268443?q=80&w=600&auto=format&fit=crop" },
+//   { id: "potato", label: "Potato", img: "https://images.unsplash.com/photo-1542444459-db9e5b3b7d1f?q=80&w=600&auto=format&fit=crop" },
+//   { id: "cassava_processed", label: "Cassava (Processed)", img: "https://images.unsplash.com/photo-1524594154902-0b1f7b4f8d8e?q=80&w=600&auto=format&fit=crop" },
+//   { id: "cocoa", label: "Cocoa", img: "https://images.unsplash.com/photo-1550258987-190a2d41a8ba?q=80&w=600&auto=format&fit=crop" },
+//   { id: "oil_palm", label: "Palm Oil / Oil Palm", img: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?q=80&w=600&auto=format&fit=crop" },
+//   { id: "banana", label: "Banana/Plantain", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop" },
+//   { id: "citrus", label: "Citrus", img: "https://images.unsplash.com/photo-1562004760-ace8f9d1605b?q=80&w=600&auto=format&fit=crop" },
+//   { id: "pineapple", label: "Pineapple", img: "https://images.unsplash.com/photo-1502741126161-b048400d7b9a?q=80&w=600&auto=format&fit=crop" },
+//   { id: "cabbage", label: "Cabbage", img: "https://images.unsplash.com/photo-1547517029-22f3b44f4e57?q=80&w=600&auto=format&fit=crop" },
+//   { id: "okra", label: "Okra", img: "https://images.unsplash.com/photo-1519074002996-a69e7ac46a42?q=80&w=600&auto=format&fit=crop" },
+//   { id: "cassava_root", label: "Cassava Root", img: "https://images.unsplash.com/photo-1592928305769-1bfa56337f1e?q=80&w=600&auto=format&fit=crop" },
+//   { id: "rubber", label: "Rubber", img: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=600&auto=format&fit=crop" },
+//   { id: "sugarcane", label: "Sugarcane", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop" },
+//   { id: "tea", label: "Tea", img: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=600&auto=format&fit=crop" },
+//   { id: "coffee", label: "Coffee", img: "https://images.unsplash.com/photo-1470337458703-46ad1756a187?q=80&w=600&auto=format&fit=crop" },
+//   { id: "ginger", label: "Ginger", img: "https://images.unsplash.com/photo-1524594154902-0b1f7b4f8d8e?q=80&w=600&auto=format&fit=crop" },
+//   { id: "garri", label: "Garri (Processed Cassava)", img: "https://images.unsplash.com/photo-1567306226416-28f0efdc88ce?q=80&w=600&auto=format&fit=crop" },
+//   // You can expand this list further to reach the ~70% coverage you want.
+// ];
+
+export default function SignupPage() {
+  const { register, handleSubmit } = useForm<FormData>();
+  const router = useRouter();
+  const [localLoading, setLocalLoading] = useState(false);
+  const [formState, setFormState] = useState<FormData>({
+    name: "",
+    email: "",
+    password: "",
+    phone: "",
+    state: "",
+    lga: "",
+    crops: [],
+  });
+
+  const [cropSearch, setCropSearch] = useState("");
+  const [stateSearch, setStateSearch] = useState("");
+  const [lgaSearch, setLgaSearch] = useState("");
+  const [detected, setDetected] = useState<{ state?: string; lga?: string }>({});
+
+  // prepare filtered arrays
+  const filteredCrops = useMemo(
+    () => CROP_OPTIONS.filter((c) => c.label.toLowerCase().includes(cropSearch.toLowerCase())),
+    [cropSearch]
+  );
+
+  const allStates = useMemo(() => Object.keys(NIGERIA_STATES_LGAS), []);
+  const filteredStates = useMemo(
+    () => allStates.filter((s) => s.toLowerCase().includes(stateSearch.toLowerCase())),
+    [stateSearch, allStates]
+  );
+
+  const lgasForState = useMemo(() => {
+    if (!formState.state) return [] as string[];
+    return NIGERIA_STATES_LGAS[formState.state] ?? [];
+  }, [formState.state]);
+
+  const filteredLGAs = useMemo(
+    () => (lgaSearch ? lgasForState.filter((l) => l.toLowerCase().includes(lgaSearch.toLowerCase())) : lgasForState),
+    [lgasForState, lgaSearch]
+  );
+
+  // improved geolocation
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        // try BigDataCloud first (preferred), fallback to Nominatim
+        try {
+          const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+          const j = await res.json();
+          const princ = j.principalSubdivision ?? j.countryName ?? "";
+          const l = j.locality ?? j.city ?? j.municipality ?? "";
+          if (princ && NIGERIA_STATES_LGAS[princ]) {
+            setFormState((p) => ({ ...p, state: princ, lga: NIGERIA_STATES_LGAS[princ].includes(l) ? l : "" }));
+            setDetected({ state: princ, lga: l });
+            return;
+          }
+        } catch (err) {
+          // fallback to nominatim
+        }
+        // fallback: nominatim reverse
+        try {
+          const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+          const j2 = await res2.json();
+          const add = j2.address || {};
+          const state = add.state || add.region || "";
+          const lga = add.county || add.suburb || add.town || "";
+          if (state && NIGERIA_STATES_LGAS[state]) {
+            setFormState((p) => ({ ...p, state, lga: NIGERIA_STATES_LGAS[state].includes(lga) ? lga : "" }));
+            setDetected({ state, lga });
+          }
+        } catch (e) {
+          console.warn("reverse geocode fallback failed", e);
+        }
+      },
+      (err) => {
+        console.warn("geolocation error", err);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  }, []);
+
+  function toggleCrop(id: string) {
+    setFormState((p) => {
+      const crops = p.crops.includes(id) ? p.crops.filter((c) => c !== id) : [...p.crops, id];
+      return { ...p, crops };
+    });
+  }
+
+  async function onSubmit(data: FormData) {
+    try {
+      setLocalLoading(true);
+      // create user first
+      const create = await createUserWithEmailAndPassword(auth, formState.email, formState.password);
+      const uid = create.user.uid;
+      await setDoc(doc(db, "farmers", uid), {
+        name: formState.name,
+        email: formState.email,
+        phone: formState.phone,
+        state: formState.state,
+        lga: formState.lga,
+        crops: formState.crops,
+        createdAt: new Date().toISOString(),
+      });
+      toast.success("Account created. Redirecting to login...");
+      setTimeout(() => router.push("/login"), 900);
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "message" in err) {
+        toast.error((err as { message?: string }).message || "Signup failed");
+      } else {
+        toast.error("Signup failed");
+      }
+    } finally {
+      setLocalLoading(false);
+    }
+  }
+
+  if (localLoading) return <Loader />;
+
+  return (
+    <div className="min-h-screen p-6 bg-gray-50">
+      <ToastContainer />
+      <div className="max-w-4xl mx-auto">
+        <div className="grid md:grid-cols-2 gap-6">
+          <form className="bg-white p-6 rounded shadow" onSubmit={handleSubmit(onSubmit)}>
+            <h2 className="text-2xl font-semibold mb-3 text-green-700">Create account</h2>
+
+            <label className="text-sm">Full name</label>
+            <input className="w-full border p-2 rounded mt-1 mb-2" value={formState.name} onChange={(e) => setFormState({ ...formState, name: e.target.value })} required />
+
+            <label className="text-sm">Phone number</label>
+            <input className="w-full border p-2 rounded mt-1 mb-2" value={formState.phone} onChange={(e) => setFormState({ ...formState, phone: e.target.value })} placeholder="+234..." required />
+
+            <label className="text-sm">Email</label>
+            <input type="email" className="w-full border p-2 rounded mt-1 mb-2" value={formState.email} onChange={(e) => setFormState({ ...formState, email: e.target.value })} required />
+
+            <label className="text-sm">Password</label>
+            <input type="password" className="w-full border p-2 rounded mt-1 mb-3" value={formState.password} onChange={(e) => setFormState({ ...formState, password: e.target.value })} required />
+
+            {/* CROPS */}
+            <div className="mt-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Crops you grow</label>
+                <span className="text-xs text-gray-500">You can select multiple</span>
+              </div>
+              <input
+                placeholder="Search crops..."
+                className="w-full border p-2 rounded mt-2"
+                value={cropSearch}
+                onChange={(e) => setCropSearch(e.target.value)}
+              />
+              <div className="grid grid-cols-2 gap-2 mt-2 max-h-56 overflow-y-auto">
+                {filteredCrops.map((c) => {
+                  const selected = formState.crops.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => toggleCrop(c.id)}
+                      className={`flex items-center gap-3 p-2 border rounded text-left ${selected ? "border-green-600 bg-green-50" : ""}`}
+                    >
+                      <div className="w-12 h-12 relative rounded overflow-hidden bg-gray-100">
+                        <Image src={c.img} alt={c.label} fill sizes="48px" style={{ objectFit: "cover" }} />
+                      </div>
+                      <div className="font-medium">{c.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* STATES */}
+            <div className="mt-4">
+              <label className="text-sm font-medium">Select State</label>
+              <input
+                placeholder={formState.state ? formState.state : "Search state..."}
+                className="w-full border p-2 rounded mt-2"
+                value={stateSearch}
+                onChange={(e) => setStateSearch(e.target.value)}
+              />
+              <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto">
+                {filteredStates.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setFormState({ ...formState, state: s, lga: "" })}
+                    className={`p-2 border rounded text-left ${formState.state === s ? "border-green-600 bg-green-50" : ""}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* LGAs */}
+            {formState.state && (
+              <div className="mt-4">
+                <label className="text-sm font-medium">Select LGA</label>
+                <input
+                  placeholder={formState.lga ? formState.lga : "Search LGA..."}
+                  className="w-full border p-2 rounded mt-2"
+                  value={lgaSearch}
+                  onChange={(e) => setLgaSearch(e.target.value)}
+                />
+                <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto">
+                  {filteredLGAs.map((l) => (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => setFormState({ ...formState, lga: l })}
+                      className={`p-2 border rounded text-left ${formState.lga === l ? "border-green-600 bg-green-50" : ""}`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4">
+              <button type="submit" className="w-full bg-green-600 text-white p-2 rounded font-semibold">Create account</button>
+            </div>
+
+            <div className="text-sm text-center mt-3">
+              Already have an account? <a href="/login" className="text-green-600">Log in</a>
+            </div>
+          </form>
+
+          <aside className="hidden md:block bg-gradient-to-b from-green-600 to-emerald-500 text-white p-6 rounded shadow">
+            <h3 className="text-xl font-semibold mb-3">Why create an account?</h3>
+            <ul className="list-disc pl-5 space-y-2 text-sm">
+              <li>Get weather updates for your exact LGA.</li>
+              <li>Receive AI-based advice tailored to your crops.</li>
+              <li>Save your farm profile and preferences.</li>
+            </ul>
+            <div className="mt-6 rounded overflow-hidden">
+              <Image src="https://images.unsplash.com/photo-1599058917212-d750089bc07d?q=80&w=800&auto=format&fit=crop" alt="agri" width={600} height={320} className="object-cover" />
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
