@@ -26,7 +26,7 @@ import CropEditorModal from "@/components/CropEditorModal";
 import CropDetailModal from "@/components/CropDetailModal";
 import CropStageModal from "@/components/CropStageModal";
 import { CROP_OPTIONS } from "@/lib/crops";
-import { addAdvisory, fetchAdvisories, updateFarmerCrops, updateFarmerCropStatus, getFarmer } from "@/lib/firestore";
+import { addAdvisory, fetchAdvisories, updateFarmerCrops, updateFarmerCropStatus } from "@/lib/firestore";
 import { auth, db, storage } from "@/lib/firebase";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
@@ -82,6 +82,8 @@ export default function DashboardPage() {
 
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [advice, setAdvice] = useState<string>("");
+  // map of cropId -> advice string returned from API
+  const [cropAdvices, setCropAdvices] = useState<Record<string, string>>({});
   // Advisory type
   type Advisory = {
     id: string;
@@ -256,6 +258,19 @@ useEffect(() => {
 
         // call /api/advice to get the latest advisory for overview
         setLoadingAdvice(true);
+        // Build cropStages object for API
+        const cropStages: Record<string, { stage?: string }> = {};
+        (data.crops ?? []).forEach((c: string) => {
+          cropStages[c] = { stage: data.cropStatus?.[c]?.stage ?? "unknown" };
+        });
+        // Limit advice API calls to 3 per load (per dashboard load)
+        let adviceCallCount = 0;
+        adviceCallCount++;
+        if (adviceCallCount > 3) {
+          setAdvice("Advice API call limit reached. Try again later.");
+          setLoadingAdvice(false);
+          return;
+        }
         const adRes = await fetch("/api/advice", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -263,6 +278,7 @@ useEffect(() => {
             crops: data.crops ?? [],
             weather: wJson,
             lang: data.language ?? "en",
+            cropStages,
           }),
         });
         const adJson = await adRes.json();
@@ -361,6 +377,8 @@ useEffect(() => {
   }
 
   // Save crop status from detail modal
+  // kept for potential callbacks from modals; disable unused warning
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleSaveCropStage(cropId: string, status: { stage?: string; plantedAt?: string }) {
     if (!user) return;
     try {
@@ -439,13 +457,33 @@ useEffect(() => {
           crops: farm.crops ?? [],
           weather: wJson,
           lang: farm.language ?? "en",
+          stage: null,
         }),
       });
-  const adJson = await adRes.json();
-  const generated = adJson.advisory ?? adJson.advice ?? "";
-  setAdvice(generated);
+      const adJson = await adRes.json();
 
-  await addAdvisory(user!.uid, { advice: generated, weather: wJson, crops: farm.crops ?? [] });
+      // adJson may be { header, items: [{crop, advice}] } or fallback {advice}
+      if (adJson && Array.isArray(adJson.items)) {
+        type AiItem = { crop: string; advice: string };
+        type AiResp = { header?: string; items: AiItem[] };
+        const resp = adJson as AiResp;
+        // build advice map keyed by crop name (lowercase)
+        const map: Record<string, string> = {};
+        resp.items.forEach((it: AiItem) => {
+          const key = (it.crop || '').toLowerCase();
+          map[key] = it.advice || '';
+        });
+        setCropAdvices(map);
+        // store the composed advice string for history: join items into one text
+        const joined = (resp.items || []).map((it: AiItem, i: number) => `${i+1}. ${it.crop}\n${it.advice}`).join('\n\n');
+        const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
+        setAdvice(fullAdvice);
+        await addAdvisory(user!.uid, { advice: joined, weather: wJson, crops: farm.crops ?? [] });
+      } else {
+        const generated = adJson.advisory ?? adJson.advice ?? "";
+        setAdvice(generated);
+        await addAdvisory(user!.uid, { advice: generated, weather: wJson, crops: farm.crops ?? [] });
+      }
   const h = await fetchAdvisories(user!.uid, 10);
   if (Array.isArray(h)) {
     // validate array items to match Advisory before setting state
@@ -575,7 +613,7 @@ useEffect(() => {
       <header className="py-8 flex flex-col items-center">
         <Image src="https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1600&q=80" alt="Pangolin-x logo" width={220} height={60} className="mb-4" />
         <div className="w-full max-w-5xl mx-auto px-4">
-          <div className="bg-white/90 rounded-2xl p-6 flex items-center gap-6 shadow-xl">
+          <div className="bg-white/90 rounded-2xl p-6 flex flex-col sm:flex-row items-center gap-6 shadow-xl">
             <div>
               {farm?.photoURL ? (
                 <Image src={farm.photoURL || '/default-profile.png'} alt="profile" width={64} height={64} className="w-16 h-16 rounded-full object-cover border" />
@@ -589,7 +627,7 @@ useEffect(() => {
               <div className="text-lg font-semibold text-green-800">{t("dashboard_title")}</div>
               <div className="text-sm text-gray-600">{t("dashboard_subtitle")}</div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <div className="text-sm text-gray-700">{farm?.name}</div>
 
 {/* <button
@@ -603,7 +641,7 @@ useEffect(() => {
 <LanguageButton />
 
 
-              <button onClick={() => router.push("/check-weather")} className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg">
+                  <button onClick={() => router.push("/check-weather")} className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg">
                     <Cloud className="w-4 h-4" /> {t("checkWeather")}
                   </button>
             </div>
@@ -713,8 +751,11 @@ useEffect(() => {
                         {(farm?.crops ?? []).length === 0 ? (
                           <div className="text-gray-600">{t("no_crops_selected")}</div>
                         ) : (
-                          (farm?.crops ?? []).map((cId) => (
+                          (farm?.crops ?? []).map((cId, idx) => (
                             <div key={cId} className="p-3 border rounded-lg flex gap-3 items-start">
+                              <div className="w-12 text-center flex-shrink-0">
+                                <div className="text-sm font-bold text-white bg-green-600 rounded-full w-8 h-8 flex items-center justify-center">{idx+1}</div>
+                              </div>
                               <div className="w-16 h-16 rounded overflow-hidden bg-gray-100 flex-shrink-0">
                                 <Image
                                   src={CROP_OPTIONS.find((c) => c.id === cId)?.img || `https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop`}
@@ -726,10 +767,8 @@ useEffect(() => {
                               </div>
                               <div className="flex-1">
                                 <div className="font-semibold text-green-800">{cId.charAt(0).toUpperCase() + cId.slice(1)}</div>
-                                <div className="text-xs text-gray-500">
-                                  {t("stage_label")}: {farm?.cropStatus?.[cId]?.stage ?? t("unknown_stage")}
-                                </div>
-                                <div className="mt-2 text-gray-700">{latestAdviceForCrop(cId)}</div>
+                                <div className="text-xs text-gray-500">{t("stage_label")}: {farm?.cropStatus?.[cId]?.stage ?? t("unknown_stage")}</div>
+                                <div className="mt-2 text-gray-700">{cropAdvices[cId.toLowerCase()] ?? latestAdviceForCrop(cId)}</div>
                               </div>
                               <div>
                                 <button
@@ -916,7 +955,6 @@ useEffect(() => {
       crop={detailCrop ?? { id: "", name: "" }}
       weather={weather}
       lang={farm?.language ?? lang}
-      onSave={handleSaveCropStage}
       onOpenStageModal={() => {
         // open stage modal (detail modal already set detailCrop)
         setStageModalTarget(detailCrop?.id ?? null);

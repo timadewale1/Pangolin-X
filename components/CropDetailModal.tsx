@@ -21,49 +21,47 @@ interface CropDetailModalProps {
   crop?: { id: string; name: string; stage?: string };
   weather?: Weather | null;
   onClose: () => void;
-  onSave: (cropId: string, data: { stage?: string }) => void;
   lang: string;
   // optional callback to open the stage modal for a single crop
   onOpenStageModal?: (cropId: string) => void;
 }
 
-export default function CropDetailModal({ open, crop, weather, onClose, onSave, lang, onOpenStageModal }: CropDetailModalProps) {
+export default function CropDetailModal({ open, crop, weather, onClose, lang, onOpenStageModal }: CropDetailModalProps) {
   const { t } = useLang();
   const [advice, setAdvice] = useState<string>("");
 
   useEffect(() => {
-    if (crop && weather) {
-      fetch("/api/advice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          crops: [crop.name],
-          weather,
-          lang,
-          stage: crop.stage,
-        }),
-      })
-        .then((res) => res.json())
-        .then((data) => setAdvice(data.advice || ""))
-        .catch(() => setAdvice("No advice available right now."));
-    }
-  }, [crop, weather, lang]);
-
-  const refreshAdvice = async () => {
-    if (!crop || !weather) return;
-    setAdvice("");
-    try {
-      const res = await fetch("/api/advice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ crops: [crop.name], weather, lang, stage: crop.stage }),
-      });
-      const data = await res.json();
-      setAdvice(data.advice || "");
-    } catch (e) {
+    if (!open || !crop || !weather) return;
+    // Capture values so the async closure doesn't see 'crop' as possibly undefined.
+    const cropId = crop.id;
+    const cropStageVal = crop.stage ?? "unknown";
+    let cancelled = false;
+    async function fetchAdvice() {
       setAdvice("");
+      // Build cropStages object keyed by crop id (not name)
+      const cropStages: Record<string, { stage?: string }> = {};
+      cropStages[cropId] = { stage: cropStageVal };
+      // Send crop IDs in the crops array so API keys line up with cropStages
+      const res = await fetch('/api/advice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ crops: [cropId], weather, lang, cropStages }),
+      });
+      const j = await res.json();
+      if (cancelled) return;
+      if (Array.isArray(j.items) && j.items.length > 0) {
+        setAdvice(j.items[0].advice || '');
+      } else if (j.advice) {
+        setAdvice(j.advice);
+      } else {
+        setAdvice(t('no_advice') || 'No advice available');
+      }
     }
-  };
+    fetchAdvice();
+    return () => { cancelled = true; };
+  }, [open, crop, weather, lang, t]);
+
+  // refresh removed; advice loads automatically when modal opens
 
   if (!crop) return null;
 
@@ -91,12 +89,8 @@ export default function CropDetailModal({ open, crop, weather, onClose, onSave, 
             {t("cropAdviceDesc") || "AI-generated farming advice based on crop stage and current weather:"}
           </p>
 
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mt-3 w-full text-sm text-gray-700">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mt-3 w-full text-sm text-gray-700 whitespace-pre-line">
             {advice === "" ? (t("no_advice") || "No advice available") : advice}
-          </div>
-
-          <div className="flex gap-3 mt-2 w-full">
-            <Button onClick={refreshAdvice} className="bg-green-600 text-white hover:bg-green-700">{t("refresh") || "Refresh"}</Button>
           </div>
 
           <div className="mt-6 w-full">
