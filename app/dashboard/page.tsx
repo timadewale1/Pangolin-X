@@ -704,23 +704,17 @@ useEffect(() => {
         {activeTab === "overview" && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div className="bg-white/90 rounded-2xl p-6 shadow-lg">
-              <div className="flex items-start justify-between gap-4">
-                <div>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="text-center sm:text-left">
                   <h2 className="text-xl font-semibold text-green-800">
                     {t("latest_advisory_for")} {farm?.name} - {farm?.lga}, {farm?.state}
                   </h2>
                   <p className="text-sm text-gray-600 mt-1">{t("overview_sub")}</p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center">
                   <button onClick={refreshAdviceAndStore} className="flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg">
                     <RefreshCw className="w-4 h-4" /> {t("refresh")}
-                  </button>
-
-                  
-
-                  <button onClick={() => setCropModalOpen(true)} className="flex items-center gap-2 bg-white border px-3 py-2 rounded-lg text-green-700">
-                    <Layers className="w-4 h-4" /> {t("edit_crops")}
                   </button>
                 </div>
               </div>
@@ -764,7 +758,7 @@ useEffect(() => {
                           <div className="text-xs text-gray-500">{t("wind_speed")}: {weather?.current?.wind_speed ?? weather?.wind?.speed ?? "-"}</div>
                         </div>
                       </div>
-                      <div className="text-gray-800 whitespace-pre-line">{advice || t("no_advice_available")}</div>
+                      {/* <div className="text-gray-800 whitespace-pre-line">{advice || t("no_advice_available")}</div> */}
                     </div>
 
                     {/* right: crop grid with advice per crop */}
@@ -790,7 +784,6 @@ useEffect(() => {
                               <div className="flex-1">
                                 <div className="font-semibold text-green-800">{cId.charAt(0).toUpperCase() + cId.slice(1)}</div>
                                 <div className="text-xs text-gray-500">{t("stage_label")}: {farm?.cropStatus?.[cId]?.stage ?? t("unknown_stage")}</div>
-                                <div className="mt-2 text-gray-700">{cropAdvices[cId.toLowerCase()] ?? latestAdviceForCrop(cId)}</div>
                               </div>
                               <div>
                                 <button
@@ -800,6 +793,7 @@ useEffect(() => {
                                   {t("view")}
                                 </button>
                               </div>
+                               <div className="mt-2 text-gray-700">{cropAdvices[cId.toLowerCase()] ?? latestAdviceForCrop(cId)}</div>
                             </div>
                           ))
                         )}
