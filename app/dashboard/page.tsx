@@ -33,7 +33,8 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 // ...existing code...
 // ...existing code...
 import LanguageButton from "@/components/LanguageButton";
-import { useLanguage } from "@/context/LanguageContext"
+import { useLanguage } from "@/context/LanguageContext";
+// image is served from /Pangolin-x.jpg in the public folder; reference it directly in <Image src="/Pangolin-x.jpg" ... />
 // ...existing code...
 
 type FarmerDoc = {
@@ -282,13 +283,34 @@ useEffect(() => {
           }),
         });
         const adJson = await adRes.json();
-        const generated = adJson.advisory ?? adJson.advice ?? "";
-        setAdvice(generated);
+  // adJson may be { header, items: [{crop, advice}] } or fallback {advice} or {advisory}
+  let storedAdvice = "";
+  if (adJson && Array.isArray(adJson.items)) {
+          type AiItem = { crop: string; advice: string };
+          type AiResp = { header?: string; items: AiItem[] };
+          const resp = adJson as AiResp;
+          // build advice map keyed by crop id/name lowercase
+          const map: Record<string, string> = {};
+          resp.items.forEach((it) => {
+            const key = (it.crop || '').toLowerCase();
+            map[key] = it.advice || '';
+          });
+          setCropAdvices(map);
+          // store a friendly advice string for overview: header + numbered items
+          const joined = (resp.items || []).map((it, i) => `${i+1}. ${it.crop}\n${it.advice}`).join('\n\n');
+          const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
+          setAdvice(fullAdvice);
+          storedAdvice = fullAdvice;
+        } else {
+          const generated = adJson?.advisory ?? adJson?.advice ?? "";
+          setAdvice(generated);
+          storedAdvice = generated;
+        }
         setLoadingAdvice(false);
 
         // store advisory in firestore (best effort, ignore errors)
                 try {
-                  await addAdvisory(user!.uid, { advice: generated, weather: wJson, crops: data.crops ?? [] });
+                  await addAdvisory(user!.uid, { advice: storedAdvice, weather: wJson, crops: data.crops ?? [] });
                   const h = await fetchAdvisories(user!.uid, 10);
                   if (Array.isArray(h)) {
                     setAdvisories(
@@ -600,7 +622,7 @@ useEffect(() => {
       {/* static Unsplash background + green overlay */}
       <div className="absolute inset-0 -z-10">
         <Image
-          src="https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1600&q=80"
+          src="https://images.unsplash.com/photo-1620200423727-8127f75d7f53?q=80&w=600&auto=format&fit=crop"
           alt="farm background"
           fill
           style={{ objectFit: "cover" }}
@@ -611,7 +633,7 @@ useEffect(() => {
 
       {/* header/logo centered */}
       <header className="py-8 flex flex-col items-center">
-        <Image src="https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1600&q=80" alt="Pangolin-x logo" width={220} height={60} className="mb-4" />
+        <Image src="/Pangolin-x.png" alt="Pangolin-x logo" width={220} height={60} className="mb-4" />
         <div className="w-full max-w-5xl mx-auto px-4">
           <div className="bg-white/90 rounded-2xl p-6 flex flex-col sm:flex-row items-center gap-6 shadow-xl">
             <div>
@@ -641,7 +663,7 @@ useEffect(() => {
 <LanguageButton />
 
 
-                  <button onClick={() => router.push("/check-weather")} className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg">
+                  <button onClick={() => router.push("/check-weather")} className="flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg">
                     <Cloud className="w-4 h-4" /> {t("checkWeather")}
                   </button>
             </div>
@@ -651,25 +673,25 @@ useEffect(() => {
           <nav className="mt-4 flex items-center justify-center gap-2">
             <button
               onClick={() => setActiveTab("overview")}
-              className={`px-4 py-2 rounded-full ${activeTab === "overview" ? "bg-white text-green-800" : "bg-white/20 text-white"}`}
+              className={`px-4 py-2 rounded-full ${activeTab === "overview" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("overview_tab")}
             </button>
-            <button
+            {/* <button
               onClick={() => setActiveTab("history")}
-              className={`px-4 py-2 rounded-full ${activeTab === "history" ? "bg-white text-green-800" : "bg-white/20 text-white"}`}
+              className={`px-4 py-2 rounded-full ${activeTab === "history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("history_tab")}
-            </button>
+            </button> */}
             <button
               onClick={() => setActiveTab("crops")}
-              className={`px-4 py-2 rounded-full ${activeTab === "crops" ? "bg-white text-green-800" : "bg-white/20 text-white"}`}
+              className={`px-4 py-2 rounded-full ${activeTab === "crops" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("crops_tab")}
             </button>
             <button
               onClick={() => setActiveTab("settings")}
-              className={`px-4 py-2 rounded-full ${activeTab === "settings" ? "bg-white text-green-800" : "bg-white/20 text-white"}`}
+              className={`px-4 py-2 rounded-full ${activeTab === "settings" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("settings_tab")}
             </button>
@@ -685,7 +707,7 @@ useEffect(() => {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-semibold text-green-800">
-                    {t("latest_advisory_for")} {farm?.name} — {farm?.lga}, {farm?.state}
+                    {t("latest_advisory_for")} {farm?.name} - {farm?.lga}, {farm?.state}
                   </h2>
                   <p className="text-sm text-gray-600 mt-1">{t("overview_sub")}</p>
                 </div>
@@ -710,7 +732,6 @@ useEffect(() => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* left: overall advice */}
                     <div className="p-4 rounded-lg bg-white shadow-sm space-y-4">
-                      <div className="text-gray-800 whitespace-pre-line">{advice || t("no_advice_available")}</div>
 
                       {/* Weather 3-column grid */}
                       <div className="mt-3 grid grid-cols-3 gap-3">
@@ -743,6 +764,7 @@ useEffect(() => {
                           <div className="text-xs text-gray-500">{t("wind_speed")}: {weather?.current?.wind_speed ?? weather?.wind?.speed ?? "-"}</div>
                         </div>
                       </div>
+                      <div className="text-gray-800 whitespace-pre-line">{advice || t("no_advice_available")}</div>
                     </div>
 
                     {/* right: crop grid with advice per crop */}
@@ -809,8 +831,32 @@ useEffect(() => {
                 }
                 // Group by date (YYYY-MM-DD)
                 const grouped: { [date: string]: Advisory[] } = {};
+                // helper: convert various createdAt shapes to JS Date
+                function toDate(input: unknown): Date {
+                  if (!input) return new Date(0);
+                  if (typeof input === 'string' || typeof input === 'number') return new Date(input as string | number);
+                  // check for toDate() method
+                  const asObj = input as { toDate?: () => Date; seconds?: number; nanoseconds?: number };
+                  if (typeof asObj.toDate === 'function') {
+                    try { return asObj.toDate(); } catch { /* fallthrough */ }
+                  }
+                  // Firestore-like { seconds, nanoseconds }
+                  if (typeof asObj.seconds === 'number') {
+                    const seconds = asObj.seconds as number;
+                    const nanos = typeof asObj.nanoseconds === 'number' ? asObj.nanoseconds as number : 0;
+                    return new Date(seconds * 1000 + Math.round(nanos / 1e6));
+                  }
+                  // last resort: try to coerce via JSON
+                  try {
+                    const s = JSON.stringify(input);
+                    const parsed = JSON.parse(s);
+                    if (typeof parsed === 'string' || typeof parsed === 'number') return new Date(parsed as string | number);
+                  } catch { /* ignore */ }
+                  return new Date(0);
+                }
+
                 realAdvisories.forEach(a => {
-                  const d = new Date(typeof a.createdAt === "string" ? a.createdAt : a.createdAt.toISOString());
+                  const d = toDate((a as unknown as { createdAt?: unknown }).createdAt);
                   const key = d.toISOString().slice(0, 10);
                   if (!grouped[key]) grouped[key] = [];
                   grouped[key].push(a);

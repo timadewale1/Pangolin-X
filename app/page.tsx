@@ -9,16 +9,17 @@ import { FaCloudSun, FaLeaf, FaGlobe, FaMobileAlt } from "react-icons/fa";
 export default function Home() {
   const { t, lang, setLang } = useLanguage();
 
-  const heroImg = "https://images.unsplash.com/photo-1576765607924-bad9148e6a53?q=80&w=1400&auto=format&fit=crop";
-  const howImg = "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?q=80&w=1200&auto=format&fit=crop";
-  const featuresImg = "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop";
+  const heroImg = "https://images.unsplash.com/photo-1620200423727-8127f75d7f53?q=80&w=600&auto=format&fit=crop";
+  const howImg = "https://images.unsplash.com/photo-1744230673231-865d54a0aba4?q=80&w=600&auto=format&fit=crop";
+  const featuresImg = "https://images.unsplash.com/photo-1630260667842-830a17d12ec9?q=80&w=600&auto=format&fit=crop";
 
   return (
     <div>
       <nav className="bg-white shadow-md sticky top-0 z-40">
         <div className="container mx-auto px-6 py-3 flex justify-between items-center">
           <div className="flex items-center space-x-4">
-            <span className="text-2xl font-bold text-green-700">Pangolin-x</span>
+            <Image src="/Pangolin-x.png" alt="Pangolin-x logo" width={48} height={48} priority />
+            {/* <span className="text-2xl font-bold text-green-700">Pangolin-x</span> */}
           </div>
 
           <div className="hidden md:flex items-center space-x-4">
@@ -64,7 +65,7 @@ export default function Home() {
       </nav>
 
       {/* Hero */}
-      <header className="relative" style={{ backgroundImage: `url(${featuresImg})`, backgroundSize: "cover", backgroundPosition: "center" }}>
+      <header className="relative" style={{ backgroundImage: `url(${heroImg})`, backgroundSize: "cover", backgroundPosition: "center" }}>
         <div className="absolute inset-0 bg-[#255b2f88]"></div> {/* green overlay */}
         <div className="container mx-auto px-6 py-24 md:py-36 relative z-10 text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-4 text-white">{t("title")}</h1>

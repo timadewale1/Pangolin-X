@@ -38,24 +38,39 @@ export default function CropDetailModal({ open, crop, weather, onClose, lang, on
     let cancelled = false;
     async function fetchAdvice() {
       setAdvice("");
-      // Build cropStages object keyed by crop id (not name)
+      // Always send selected language and crop stage
       const cropStages: Record<string, { stage?: string }> = {};
       cropStages[cropId] = { stage: cropStageVal };
-      // Send crop IDs in the crops array so API keys line up with cropStages
       const res = await fetch('/api/advice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ crops: [cropId], weather, lang, cropStages }),
       });
-      const j = await res.json();
-      if (cancelled) return;
-      if (Array.isArray(j.items) && j.items.length > 0) {
-        setAdvice(j.items[0].advice || '');
-      } else if (j.advice) {
-        setAdvice(j.advice);
-      } else {
-        setAdvice(t('no_advice') || 'No advice available');
+      let j: unknown = null;
+      try {
+        j = await res.json();
+      } catch (err) {
+        console.warn('failed to parse AI response', err);
       }
+      if (cancelled) return;
+      let out = '';
+      if (j && typeof j === 'object' && j !== null) {
+        const jj = j as { items?: unknown; advice?: unknown; advisory?: unknown };
+        if (Array.isArray(jj.items) && (jj.items as unknown[]).length > 0) {
+          type AiItem = { crop?: unknown; advice?: unknown };
+          const first = (jj.items as unknown[])[0] as AiItem | undefined;
+          if (first && typeof first.advice === 'string') {
+            out = first.advice || '';
+          }
+        } else if (typeof jj.advice === 'string') {
+          out = jj.advice as string;
+        } else if (typeof jj.advisory === 'string') {
+          out = jj.advisory as string;
+        }
+      }
+      out = (out || '').toString().trim();
+      if (!out) out = t('no_advice') || 'No advice available';
+      setAdvice(out);
     }
     fetchAdvice();
     return () => { cancelled = true; };
@@ -89,9 +104,9 @@ export default function CropDetailModal({ open, crop, weather, onClose, lang, on
             {t("cropAdviceDesc") || "AI-generated farming advice based on crop stage and current weather:"}
           </p>
 
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mt-3 w-full text-sm text-gray-700 whitespace-pre-line">
+          {/* <div className="bg-green-50 border border-green-200 rounded-xl p-4 mt-3 w-full text-sm text-gray-700 whitespace-pre-line">
             {advice === "" ? (t("no_advice") || "No advice available") : advice}
-          </div>
+          </div> */}
 
           <div className="mt-6 w-full">
             <label className="block text-gray-700 font-medium mb-2">
