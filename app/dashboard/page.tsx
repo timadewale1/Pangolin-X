@@ -90,7 +90,10 @@ export default function DashboardPage() {
     id: string;
     advice: string;
     crops: string[];
-    createdAt: string | Date;
+    createdAt: string | Date | {
+      seconds: number;
+      nanoseconds: number;
+    }
   };
 
   // Advisory fetch result type for paginated responses
@@ -677,12 +680,12 @@ useEffect(() => {
             >
               {t("overview_tab")}
             </button>
-            {/* <button
+            <button
               onClick={() => setActiveTab("history")}
               className={`px-4 py-2 rounded-full ${activeTab === "history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("history_tab")}
-            </button> */}
+            </button>
             <button
               onClick={() => setActiveTab("crops")}
               className={`px-4 py-2 rounded-full ${activeTab === "crops" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
@@ -724,76 +727,74 @@ useEffect(() => {
                   <div className="py-8 flex justify-center"><Loader /></div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* left: overall advice */}
-                    <div className="p-4 rounded-lg bg-white shadow-sm space-y-4">
-
-                      {/* Weather 3-column grid */}
-                      <div className="mt-3 grid grid-cols-3 gap-3">
+                    {/* Weather cards: 2 columns on mobile, 3 on md+ */}
+                    <div className="p-4 rounded-lg bg-white shadow-sm">
+                      <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-3">
                         <div className="p-4 rounded-lg bg-gradient-to-br from-green-50 to-white border flex flex-col items-start gap-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full">
                             <Thermometer className="w-6 h-6 text-green-700" />
                             <div className="text-xs text-gray-500">{t("temperature")}</div>
                           </div>
-                          <div className="text-2xl font-semibold">
+                          <div className="text-2xl font-semibold w-full">
                             {weather?.current?.temp ?? weather?.main?.temp ?? "N/A"}°C
                           </div>
-                          <div className="text-xs text-gray-500">{t("feels_like")}: {weather?.current?.feels_like ?? weather?.main?.feels_like ?? "N/A"}°C</div>
+                          <div className="text-xs text-gray-500 w-full">{t("feels_like")}: {weather?.current?.feels_like ?? weather?.main?.feels_like ?? "N/A"}°C</div>
                         </div>
-
                         <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-50 to-white border flex flex-col items-start gap-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full">
                             <Droplet className="w-6 h-6 text-blue-600" />
                             <div className="text-xs text-gray-500">{t("humidity")}</div>
                           </div>
-                          <div className="text-2xl font-semibold">{weather?.current?.humidity ?? weather?.main?.humidity ?? "N/A"}%</div>
-                          <div className="text-xs text-gray-500">{t("pressure")}: {weather?.current?.pressure ?? weather?.main?.pressure ?? "-"}</div>
+                          <div className="text-2xl font-semibold w-full">{weather?.current?.humidity ?? weather?.main?.humidity ?? "N/A"}%</div>
+                          <div className="text-xs text-gray-500 w-full">{t("pressure")}: {weather?.current?.pressure ?? weather?.main?.pressure ?? "-"}</div>
                         </div>
-
-                        <div className="p-4 rounded-lg bg-gradient-to-br from-blue-50 to-white border flex flex-col items-start gap-2">
-                          <div className="flex items-center gap-2">
+                        <div className="p-4 rounded-lg bg-gradient-to-br from-blue-50 to-white border flex flex-col items-start gap-2 col-span-1 xs:col-span-2 md:col-span-1 mx-auto">
+                          <div className="flex items-center gap-2 w-full">
                             <Cloud className="w-6 h-6 text-gray-700" />
                             <div className="text-xs text-gray-500">{t("conditions")}</div>
                           </div>
-                          <div className="text-lg font-semibold capitalize">{weather?.current?.weather?.[0]?.description ?? weather?.weather?.[0]?.description ?? "-"}</div>
-                          <div className="text-xs text-gray-500">{t("wind_speed")}: {weather?.current?.wind_speed ?? weather?.wind?.speed ?? "-"}</div>
+                          <div className="text-lg font-semibold capitalize w-full">{weather?.current?.weather?.[0]?.description ?? weather?.weather?.[0]?.description ?? "-"}</div>
+                          <div className="text-xs text-gray-500 w-full">{t("wind_speed")}: {weather?.current?.wind_speed ?? weather?.wind?.speed ?? "-"}</div>
                         </div>
                       </div>
-                      {/* <div className="text-gray-800 whitespace-pre-line">{advice || t("no_advice_available")}</div> */}
                     </div>
-
-                    {/* right: crop grid with advice per crop */}
+                    {/* Crop grid with advice per crop */}
                     <div className="p-4 rounded-lg bg-white shadow-sm">
                       <div className="grid grid-cols-1 gap-3">
                         {(farm?.crops ?? []).length === 0 ? (
                           <div className="text-gray-600">{t("no_crops_selected")}</div>
                         ) : (
                           (farm?.crops ?? []).map((cId, idx) => (
-                            <div key={cId} className="p-3 border rounded-lg flex gap-3 items-start">
-                              <div className="w-12 text-center flex-shrink-0">
-                                <div className="text-sm font-bold text-white bg-green-600 rounded-full w-8 h-8 flex items-center justify-center">{idx+1}</div>
+                            <div key={cId} className="p-3 border rounded-lg flex flex-col gap-2">
+                              <div className="flex gap-3 items-start">
+                                <div className="w-12 text-center flex-shrink-0 pt-2">
+                                  <div className="text-sm font-bold text-white bg-green-600 rounded-full w-8 h-8 flex items-center justify-center">{idx+1}</div>
+                                </div>
+                                <div className="w-16 h-16 rounded overflow-hidden bg-gray-100 flex-shrink-0">
+                                  <Image
+                                    src={CROP_OPTIONS.find((c) => c.id === cId)?.img || `https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop`}
+                                    alt={cId}
+                                    width={64}
+                                    height={64}
+                                    style={{ objectFit: "cover" }}
+                                  />
+                                </div>
+                                <div className="flex-1 flex flex-col">
+                                  <div className="font-semibold text-green-800">{cId.charAt(0).toUpperCase() + cId.slice(1)}</div>
+                                  <div className="text-xs text-gray-500">{t("stage_label")}: {farm?.cropStatus?.[cId]?.stage ?? t("unknown_stage")}</div>
+                                </div>
+                                <div>
+                                  <button
+                                    onClick={() => openCropDetail(cId)}
+                                    className="px-3 py-2 rounded bg-white border text-sm"
+                                  >
+                                    {t("view")}
+                                  </button>
+                                </div>
                               </div>
-                              <div className="w-16 h-16 rounded overflow-hidden bg-gray-100 flex-shrink-0">
-                                <Image
-                                  src={CROP_OPTIONS.find((c) => c.id === cId)?.img || `https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop`}
-                                  alt={cId}
-                                  width={64}
-                                  height={64}
-                                  style={{ objectFit: "cover" }}
-                                />
+                              <div className="mt-1 text-gray-700 w-full whitespace-pre-line">
+                                {cropAdvices[cId.toLowerCase()] ?? latestAdviceForCrop(cId)}
                               </div>
-                              <div className="flex-1">
-                                <div className="font-semibold text-green-800">{cId.charAt(0).toUpperCase() + cId.slice(1)}</div>
-                                <div className="text-xs text-gray-500">{t("stage_label")}: {farm?.cropStatus?.[cId]?.stage ?? t("unknown_stage")}</div>
-                              </div>
-                              <div>
-                                <button
-                                  onClick={() => openCropDetail(cId)}
-                                  className="px-3 py-2 rounded bg-white border text-sm"
-                                >
-                                  {t("view")}
-                                </button>
-                              </div>
-                               <div className="mt-2 text-gray-700">{cropAdvices[cId.toLowerCase()] ?? latestAdviceForCrop(cId)}</div>
                             </div>
                           ))
                         )}
@@ -861,33 +862,69 @@ useEffect(() => {
                       <div key={date}>
                         <div className="text-sm font-semibold text-green-700 mb-2">{new Date(date).toLocaleDateString()}</div>
                         <div className="grid gap-3">
-                          {items.map((a) => (
-                            <motion.div
-                              key={a.id}
-                              initial={{ opacity: 0, y: 4 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="p-3 rounded-lg bg-white shadow-sm cursor-pointer hover:bg-green-50"
-                              onClick={() => { setSelectedAdvisory(a); setAdvisoryDetailOpen(true); }}
-                            >
-                              <div className="flex items-start gap-3">
-                                <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center text-green-700">
-                                  <Layers className="w-5 h-5" />
+                          {items.map((a, idx) => {
+                            let displayTime = "";
+                            if (a.createdAt) {
+  if (typeof a.createdAt === "string" && !a.createdAt.startsWith("Timestamp")) {
+    displayTime = new Date(a.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (typeof a.createdAt === "object") {
+    if ("seconds" in a.createdAt) {
+      const d = new Date(a.createdAt.seconds * 1000);
+      displayTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      try {
+        displayTime = new Date(a.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch {
+        displayTime = "-";
+      }
+    }
+  } else {
+    try {
+      displayTime = new Date(a.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      displayTime = "-";
+    }
+  }
+}
+                            return (
+                              <motion.div
+                                key={a.id}
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="p-3 rounded-lg bg-white shadow-sm cursor-pointer hover:bg-green-50 flex items-center gap-4"
+                                onClick={() => { setSelectedAdvisory(a); setAdvisoryDetailOpen(true); }}
+                              >
+                                <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-white font-bold text-lg">
+                                  {idx + 1}
                                 </div>
                                 <div className="flex-1">
-                                  <div className="text-xs text-gray-500">{a.createdAt && (typeof a.createdAt === "string" ? new Date(a.createdAt).toLocaleString() : a.createdAt.toLocaleString())}</div>
-                                  <div className="font-medium mt-1 text-gray-800 whitespace-pre-line">{a.advice}</div>
-                                  {a.crops && a.crops.length > 0 && <div className="mt-2 text-xs text-gray-500">{t("crops_label")}: {a.crops.join(", ")}</div>}
+                                  <div className="font-semibold text-green-800">Advice given by {displayTime}</div>
                                 </div>
-                              </div>
-                            </motion.div>
-                          ))}
+                              </motion.div>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
                   </div>
                 );
               })()}
-  <AdvisoryDetailModal open={advisoryDetailOpen} onClose={() => setAdvisoryDetailOpen(false)} advisory={selectedAdvisory} />
+  <AdvisoryDetailModal
+  open={advisoryDetailOpen}
+  onClose={() => setAdvisoryDetailOpen(false)}
+  advisory={
+    selectedAdvisory
+      ? {
+          ...selectedAdvisory,
+          createdAt:
+            typeof selectedAdvisory.createdAt === "object" &&
+            "seconds" in selectedAdvisory.createdAt
+              ? new Date(selectedAdvisory.createdAt.seconds * 1000)
+              : selectedAdvisory.createdAt,
+        }
+      : null
+  }
+/>
 
               <div className="flex justify-center mt-4">
                 {adviceLastDoc ? (
