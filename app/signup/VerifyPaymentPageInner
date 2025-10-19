@@ -1,11 +1,10 @@
 "use client";
-export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Loader from '@/components/Loader';
 
-export default function VerifyPaymentPage() {
+export default function VerifyPaymentPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [verifying, setVerifying] = useState(true);
@@ -21,17 +20,15 @@ export default function VerifyPaymentPage() {
           return;
         }
 
-        // Verify payment with backend
         const res = await fetch('/api/paystack/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reference })
+          body: JSON.stringify({ reference }),
         });
 
         const data = await res.json();
 
         if (data.status && data.data?.status === 'success') {
-          // Retrieve stored form data
           const storedData = localStorage.getItem('pangolin-signup-data');
           if (!storedData) {
             setError('Missing signup data');
@@ -39,7 +36,6 @@ export default function VerifyPaymentPage() {
             return;
           }
 
-          // Clear stored data and redirect back to signup to complete registration
           localStorage.removeItem('pangolin-signup-data');
           router.push('/signup?payment=success');
         } else {
