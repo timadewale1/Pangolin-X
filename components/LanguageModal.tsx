@@ -7,9 +7,24 @@ import { useLanguage } from "@/context/LanguageContext";
   export default function LanguageModal({ openProp, onClose }: { openProp?: boolean; onClose?: () => void }) {
     const { lang, setLang } = useLanguage();
 
-    const choose = (l: typeof lang) => {
+    const choose = async (l: typeof lang) => {
       setLang(l);
       localStorage.setItem("pangolin-lang-chosen", "true");
+
+      // If user is logged in, update their language preference
+      try {
+        const auth = (await import("@/lib/firebase")).auth;
+        if (auth.currentUser) {
+          const { doc, updateDoc } = await import("firebase/firestore");
+          const { db } = await import("@/lib/firebase");
+          await updateDoc(doc(db, "farmers", auth.currentUser.uid), {
+            language: l
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to update user language preference:", err);
+      }
+      
       if (onClose) onClose();
     };
 

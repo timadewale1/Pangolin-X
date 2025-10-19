@@ -29,7 +29,19 @@ export const translations: Record<Lang, Record<string, string>> = {
     testimonials: "What Farmers Say",
 
 
-    // dashboard keys
+  // dashboard keys
+  title_label: "Title",
+  language_label: "Language",
+  fragility_tab: "Fragility & Risk Advisory",
+  fragility_history_tab: "Fragility Advisory History",
+  refresh: "Refresh",
+  severity_label: "Risk Level",
+  no_fragility_advisory: "No fragility advisory available. Click refresh to fetch.",
+  no_fragility_history: "No fragility history available.",
+  sections_label: "Sections",
+  header_label: "Header",
+  summary_label: "Summary",
+  // ...existing code...
     dashboard_title: "Pangolin-x Dashboard",
     dashboard_subtitle: "Your farm intelligence hub",
     overview_tab: "Overview",
@@ -39,7 +51,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     latest_advisory_for: "Latest advisory for",
     overview_sub: "Auto-generated based on your farm's current weather",
     edit_crops: "Edit Crops",
-    refresh: "Refresh",
+  // refresh: "Refresh", // Remove duplicate
     no_crops_selected: "No crops selected.",
     stage_label: "Stage",
     unknown_stage: "Unknown",
@@ -60,7 +72,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     upload_photo: "Upload photo",
     uploading: "Uploading...",
     name_label: "Name",
-    language_label: "Language",
+  // language_label: "Language", // Remove duplicate
     logout: "Sign Out",
     view_profile: "View profile",
     open_language: "Change language",
@@ -103,7 +115,12 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_maturing_desc: "Fruit or grain forming.",
     stage_harvest_ready_label: "Harvest Ready",
     stage_harvest_ready_desc: "Crop ready for harvest.",
-    cropAdviceDesc: "AI-generated farming advice based on crop stage and current weather."
+    cropAdviceDesc: "AI-generated farming advice based on crop stage and current weather.",
+    
+    // Fragility related translations
+    low_severity: "Low",
+    moderate_severity: "Moderate", 
+    high_severity: "High",
 
   },
 
@@ -205,7 +222,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_maturing_desc: "Ƙirƙira 'ya'yan itace ko hatsi.",
     stage_harvest_ready_label: "Shiri girbi",
     stage_harvest_ready_desc: "Amfanin gona ya shirya don girbi.",
-    cropAdviceDesc: "Shawarwarin noma na AI bisa ga matakin amfanin gona da yanayi na yanzu."
+    cropAdviceDesc: "Shawarwarin noma na AI bisa ga matakin amfanin gona da yanayi na yanzu.",
+    // Fragility related translations
+    low_severity: "Ƙarami",
+    moderate_severity: "Matsakaici",
+    high_severity: "Babba",
+     fragility_tab: "Fragility & Risk Advisory",
+    fragility_history_tab: "Fragility Advisory History",
+    severity_label: "Matakin Hadari",
+    no_fragility_advisory: "Babu shawarwari na fragility da ake da shi. Danna sabunta don samun sabbin bayanai.",
+    no_fragility_history: "Babu tarihin shawarwari na fragility.",
   },
 
   ig: {
@@ -306,7 +332,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_maturing_desc: "Ọ na-etolite mkpụrụ ma ọ bụ akọrọ.",
     stage_harvest_ready_label: "Kwadebere iri",
     stage_harvest_ready_desc: "Mkpụrụ dị njikere maka iri.",
-    cropAdviceDesc: "Ntuziaka ọrụ ugbo sitere na AI dabere na ọkwa mkpụrụ na ihu igwe ugbu a."
+    cropAdviceDesc: "Ntuziaka ọrụ ugbo sitere na AI dabere na ọkwa mkpụrụ na ihu igwe ugbu a.",
+    // Fragility related translations
+    low_severity: "Nnukwu",
+    moderate_severity: "Nkezi",
+    high_severity: "Babba",
+      fragility_tab: "Fragility & Risk Advisory",
+    fragility_history_tab: "Fragility Advisory History",
+    severity_label: "Ọkwa ize ndụ",
+    no_fragility_advisory: "Enweghị ndụmọdụ fragility dị. Pịa melite iji nweta.",
+    no_fragility_history: "Enweghị akụkọ fragility.",
   },
 
   yo: {
@@ -404,7 +439,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_maturing_desc: "N dagbasoke eso/tabili.",
     stage_harvest_ready_label: "Seto fun ikore",
     stage_harvest_ready_desc: "Irugbin ṣetan fun ikore.",
-    cropAdviceDesc: "Imọran iṣẹ-ogbin ti a ṣe nipasẹ AI da lori ipele irugbin ati oju-ọjọ lọwọlọwọ."
+    cropAdviceDesc: "Imọran iṣẹ-ogbin ti a ṣe nipasẹ AI da lori ipele irugbin ati oju-ọjọ lọwọlọwọ.",
+    // Fragility related translations
+    low_severity: "Kekere",
+    moderate_severity: "Aarin", 
+    high_severity: "Babba",
+      fragility_tab: "Fragility & Risk Advisory",
+    fragility_history_tab: "Fragility Advisory History",
+    severity_label: "Ipele Ewu",
+    no_fragility_advisory: "Ko si imọran ailagbara to wa. Tẹ tunṣe lati gba.",
+    no_fragility_history: "Ko si itan ailagbara.",
   },
 
   pg: {
@@ -496,6 +540,15 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_maturing_desc: "Fruit or grain forming.",
     stage_harvest_ready_label: "Harvest Ready",
     stage_harvest_ready_desc: "Crop ready for harvest.",
-    cropAdviceDesc: "AI-generated farming advice based on crop stage and current weather."
+    cropAdviceDesc: "AI-generated farming advice based on crop stage and current weather.",
+    // Fragility related translations
+    low_severity: "Low",
+    moderate_severity: "Moderate",
+    high_severity: "High",
+      fragility_tab: "Fragility & Risk Advisory",
+    fragility_history_tab: "Fragility Advisory History",
+    severity_label: "Risk Level",
+    no_fragility_advisory: "No fragility advisory available. Click refresh to fetch.",
+    no_fragility_history: "No fragility history available.",
   }
 };

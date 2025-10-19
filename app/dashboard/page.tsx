@@ -15,7 +15,6 @@ import {
   Cloud,
   RefreshCw,
   PlusCircle,
-  Layers,
   LogOut,
   Camera,
 } from "lucide-react";
@@ -26,7 +25,7 @@ import CropEditorModal from "@/components/CropEditorModal";
 import CropDetailModal from "@/components/CropDetailModal";
 import CropStageModal from "@/components/CropStageModal";
 import { CROP_OPTIONS } from "@/lib/crops";
-import { addAdvisory, fetchAdvisories, updateFarmerCrops, updateFarmerCropStatus } from "@/lib/firestore";
+import { addAdvisory, fetchAdvisories, updateFarmerCrops, updateFarmerCropStatus, addFragilityAdvisory, fetchFragilityAdvisories } from "@/lib/firestore";
 import { auth, db, storage } from "@/lib/firebase";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
@@ -44,6 +43,7 @@ type FarmerDoc = {
   state?: string;
   lga?: string;
   crops?: string[];
+  title?: string;
   language?: string;
   lat?: number;
   lon?: number;
@@ -102,13 +102,24 @@ export default function DashboardPage() {
     lastDoc?: unknown;
   };
 
+  type FragilitySection = { title: string; summary: string; severity: "low" | "moderate" | "high" };
+  type FragilityResp = {
+  header?: string;
+  sections?: FragilitySection[];
+  createdAt?: string | Date | { seconds: number; nanoseconds: number };
+};
+
   // Vanta.js instance type
   type VantaInstance = { destroy: () => void } | null;
 
   const [advisories, setAdvisories] = useState<Advisory[]>([]);
+  const [fragility, setFragility] = useState<FragilityResp | null>(null);
+  const [fragilityHistory, setFragilityHistory] = useState<FragilityResp[]>([]);
+  const [selectedFragility, setSelectedFragility] = useState<FragilityResp | null>(null);
+const [fragilityDetailOpen, setFragilityDetailOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [adviceLastDoc, setAdviceLastDoc] = useState<unknown>(null); // Firestore doc snapshot
-  const [activeTab, setActiveTab] = useState<"overview" | "history" | "crops" | "settings">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "history" | "crops" | "settings" | "fragility" | "fragility_history">("overview");
   const [cropModalOpen, setCropModalOpen] = useState(false);
 
   // Stage modal enforcement
@@ -339,6 +350,32 @@ useEffect(() => {
                 } catch (err) {
                   console.warn("saving advisory failed", err);
                 }
+                // After storing crop advisory, also fetch fragility advisory and persist it
+                try {
+                  const fRes = await fetch('/api/fragility', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lang: data.language ?? 'en', lga: data.lga ?? '' }),
+                  });
+                  const fJson = await fRes.json();
+                  setFragility(fJson);
+                  try {
+                    // Save as structured fragility advisory
+                    await addFragilityAdvisory(user!.uid, {
+                      header: fJson.header ?? 'Fragility advisory',
+                      sections: Array.isArray(fJson.sections) ? fJson.sections : [],
+                      weather: wJson,
+                    });
+                    const fh = await fetchFragilityAdvisories(user!.uid, 10);
+                    if (Array.isArray(fh)) {
+                      setFragilityHistory(fh as FragilityResp[]);
+                    }
+                  } catch (e) {
+                    console.warn('persisting fragility failed', e);
+                  }
+                } catch {
+                  console.warn('fragility fetch failed');
+                }
       } else {
         toast.info(t("no_coords") ?? "Location coordinates not available. Please update your location in Settings.");
       }
@@ -355,6 +392,36 @@ useEffect(() => {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [user, authLoading]);
+
+// Listen for language changes and refresh fragility
+useEffect(() => {
+  if (farm?.language && activeTab === "fragility") {
+    (async () => {
+      try {
+        const fRes = await fetch('/api/fragility', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lang: farm.language, lga: farm.lga ?? '' })
+        });
+        const fJson = await fRes.json();
+        setFragility(fJson);
+        if (user) {
+          await addFragilityAdvisory(user.uid, {
+            header: fJson.header ?? 'Fragility advisory',
+            sections: Array.isArray(fJson.sections) ? fJson.sections : [],
+            weather: weather ?? null,
+          });
+          const fh = await fetchFragilityAdvisories(user.uid, 10);
+          if (Array.isArray(fh)) {
+            setFragilityHistory(fh as FragilityResp[]);
+          }
+        }
+      } catch (err) {
+        console.warn('language change fragility refresh failed:', err);
+      }
+    })();
+  }
+}, [farm?.language, activeTab, user, farm?.lga, weather]);
 
   // helper: reload more advisories (pagination)
   async function loadMoreHistory() {
@@ -687,6 +754,18 @@ useEffect(() => {
               {t("history_tab")}
             </button>
             <button
+              onClick={() => setActiveTab("fragility")}
+              className={`px-4 py-2 rounded-full ${activeTab === "fragility" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+            >
+              {t("fragility_tab")}
+            </button>
+            <button
+              onClick={() => setActiveTab("fragility_history")}
+              className={`px-4 py-2 rounded-full ${activeTab === "fragility_history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+            >
+              {t("fragility_history_tab")}
+            </button>
+            <button
               onClick={() => setActiveTab("crops")}
               className={`px-4 py-2 rounded-full ${activeTab === "crops" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
@@ -698,6 +777,7 @@ useEffect(() => {
             >
               {t("settings_tab")}
             </button>
+            
           </nav>
         </div>
       </header>
@@ -710,7 +790,7 @@ useEffect(() => {
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-center sm:text-left">
                   <h2 className="text-xl font-semibold text-green-800">
-                    {t("latest_advisory_for")} {farm?.name} - {farm?.lga}, {farm?.state}
+                    {t("latest_advisory_for")} {farm?.title ? `${farm.title} ` : ""}{farm?.name} - {farm?.lga}, {farm?.state}
                   </h2>
                   <p className="text-sm text-gray-600 mt-1">{t("overview_sub")}</p>
                 </div>
@@ -806,6 +886,154 @@ useEffect(() => {
             </div>
           </motion.div>
         )}
+
+        {/* Fragility & Risk Advisory */}
+        {activeTab === "fragility" && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="bg-white/90 p-4 rounded-2xl shadow space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-green-800">{t("fragility_tab")}</h3>
+                <div>
+                  <button onClick={() => {
+                    // refresh fragility
+                    (async () => {
+                      try {
+                        const fRes = await fetch('/api/fragility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: farm?.language ?? 'en', lga: farm?.lga ?? '' }) });
+                        const fJson = await fRes.json();
+                        setFragility(fJson);
+                        try {
+                          // Save as structured fragility advisory
+                          if (user) {
+                            await addFragilityAdvisory(user.uid, {
+                              header: fJson.header ?? 'Fragility advisory',
+                              sections: Array.isArray(fJson.sections) ? fJson.sections : [],
+                              weather: weather ?? null,
+                            });
+                            const fh = await fetchFragilityAdvisories(user.uid, 10);
+                            if (Array.isArray(fh)) {
+                              setFragilityHistory(fh as FragilityResp[]);
+                            }
+                          }
+                        } catch (e) {
+                          console.warn('persisting fragility failed', e);
+                        }
+                      } catch {
+                        toast.error(t('toast_advice_failed'));
+                      }
+                    })();
+                  }} className="px-3 py-2 rounded bg-green-600 text-white">{t("refresh")}</button>
+                </div>
+              </div>
+
+              <div>
+                {fragility ? (
+                  <div className="space-y-3">
+                    <div className="font-medium">{fragility.header}</div>
+                    {(fragility.sections || []).map((s: FragilitySection, i: number) => (
+                      <div key={i} className="p-3 border rounded">
+                        <div className="flex items-center justify-between">
+                          <div className="font-semibold">{s.title}</div>
+                          <div className="text-sm text-gray-600">{t("severity_label")}: {t(s.severity === "low" ? "low_severity" : s.severity === "moderate" ? "moderate_severity" : "high_severity")}</div>
+                        </div>
+                        <div className="text-sm mt-1">{s.summary}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-gray-600">{t("no_fragility_advisory")}</div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Fragility History */}
+        {activeTab === "fragility_history" && (
+  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+    <div className="bg-white/90 p-4 rounded-2xl shadow space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-green-800">{t("fragility_history_tab")}</h3>
+        <div className="text-sm text-gray-600">{fragilityHistory.length} {t("items")}</div>
+      </div>
+
+      {historyLoading ? (
+        <div className="py-6"><Loader /></div>
+      ) : (
+        <div className="space-y-6">
+          {fragilityHistory.length === 0 ? (
+            <div className="text-gray-600">{t("no_fragility_history")}</div>
+          ) : (
+            (() => {
+              // Group by date
+              const grouped: { [date: string]: FragilityResp[] } = {};
+              fragilityHistory.forEach(f => {
+                if (!f.createdAt) return; // Skip items with no createdAt
+                const d = new Date(
+                  typeof f.createdAt === "object" && "seconds" in f.createdAt
+                    ? f.createdAt.seconds * 1000
+                    : f.createdAt
+                );
+                const key = d.toISOString().slice(0, 10);
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(f);
+              });
+
+              return Object.entries(grouped).map(([date, items]) => (
+                <div key={date}>
+                  <div className="text-sm font-semibold text-green-700 mb-2">{new Date(date).toLocaleDateString()}</div>
+                  <div className="grid gap-3">
+                    {items.map((f, idx) => {
+                      let displayTime = "-";
+                      if (f.createdAt) {
+                        if (typeof f.createdAt === "string" && !f.createdAt.startsWith("Timestamp")) {
+                          displayTime = new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        } else if (typeof f.createdAt === "object") {
+                          if ("seconds" in f.createdAt) {
+                            const d = new Date(f.createdAt.seconds * 1000);
+                            displayTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                          } else {
+                            try {
+                              displayTime = new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            } catch {
+                              displayTime = "-";
+                            }
+                          }
+                        } else {
+                          try {
+                            displayTime = new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                          } catch {
+                            displayTime = "-";
+                          }
+                        }
+                      }
+
+                      return (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="p-3 rounded-lg bg-white shadow-sm cursor-pointer hover:bg-green-50 flex items-center gap-4"
+                          onClick={() => { setSelectedFragility(f); setFragilityDetailOpen(true); }}
+                        >
+                          <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-white font-bold text-lg">
+                            {idx + 1}
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-semibold text-green-800">Fragility Advisory Given at {displayTime}</div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ));
+            })()
+          )}
+        </div>
+      )}
+    </div>
+  </motion.div>
+)}
 
         {/* History */}
         {activeTab === "history" && (

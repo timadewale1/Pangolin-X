@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
+import { fetchLocalNews } from "@/lib/news";
 
 export async function POST(req: Request) {
   try {
@@ -23,17 +24,24 @@ export async function POST(req: Request) {
       cropStageStr = crops.map((c: string) => `${c}: unknown`).join(", ");
     }
 
-    // Prompt engineering: ask model to return strict JSON with simple language,
-    // one item per crop and explanations that explicitly reference the weather and
-    // the crop stage. Also request translation into the requested language.
-    const prompt = `You are an expert Nigerian agricultural assistant. Produce a JSON object only (no extra text) with the following shape:\n
-{
-  "header": string,            // short header line like "Here's the latest advice..."
-  "items": [                  // array, one object per crop
-    { "crop": string, "advice": string }
-  ]
-}\n
-Requirements:\n- Use simple, clear, layman language suitable for Nigerian smallholder farmers (avoid technical words).\n- For each crop, the advice MUST be tied to the provided weather and the crop stage. Mention the weather condition (e.g. rainy, dry, hot, cloudy, etc.) and the stage, and give 2-4 short actionable steps.\n- Numbering or styling will be handled by the frontend; return plain crop names and short advice strings.\n- Translate the advice into ${lang || 'English'}.\n\n+Data:\n- Crops: ${crops.join(', ')}\n- Weather summary: ${temp}°C, ${cond}\n- Crop stages: ${cropStageStr}\n\n+Return only valid JSON that exactly matches the shape above. Do not add any extra commentary.`;
+    // Attempt to fetch local news (48h) for the farmer's LGA or state and include it in the prompt
+    let newsSummary = 'No recent local news found.';
+    try {
+      const q = (body.lga as string) || (body.state as string) || '';
+      const news = q ? await fetchLocalNews(q, 5) : null;
+      if (news && news.length > 0) {
+  newsSummary = news.map((n: { title: string; source?: string; url?: string }) => `${n.title}${n.source ? ` (Source: ${n.source})` : ''}${n.url ? ` - ${n.url}` : ''}`).join('\n');
+      }
+    } catch (e) {
+      console.warn('news fetch failed', e);
+    }
+
+    const prompt = `You are an AI Agro-Meteorological Advisory Assistant designed to provide daily, location-based, crop-specific, and climate-risk-sensitive advisories for farmers in Nigeria. Your insights combine real-time weather data, local news intelligence (last 48 hours), and institutional alerts from NIMET, NEMA, NIHSA, and SEMA. Your responses must be accurate, actionable, localized, and written in clear, farmer-friendly language (translate into the requested language if needed).
+
+Produce ONLY a JSON object (no extra text) with this exact shape:\n\n{
+  "header": string, // short header line
+  "items": [ { "crop": string, "advice": string } ] // one entry per crop
+}\n\nRequirements:\n- Use simple, clear, layman language suitable for Nigerian smallholder farmers.\n- For each crop, tie the advice to: crop type, crop stage, current weather, AND the farmer's location (LGA). Mention condition (e.g., rainy, dry, hot, windy) and the stage, and give 2-4 short actionable steps (planting, irrigation, weeding, spraying, fertilization, protection).\n- Include climate-risk sensitive recommendations (staking/mulching for high wind, delay chemicals before heavy rain, shading for heat, erosion control for floods).\n- Where relevant, include a short "News intelligence" sentence if there is recent local news (last 48 hours) about pests/disease, floods/droughts, displacement, or market disruptions. If included, add a short source tag (e.g., "Source: <name>").\n- Translate the advice into ${lang || 'English'}.\n\n+Data available:\n- Crops: ${crops.join(', ')}\n- Weather summary: ${temp}°C, ${cond}\n- Crop stages: ${cropStageStr}\n- Location (LGA): ${body.lga ?? 'unknown'}\n\nRecent local news (last 48h):\n${newsSummary}\n\nReturn only valid JSON that matches the shape above. Do not add any commentary or extra fields.`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",

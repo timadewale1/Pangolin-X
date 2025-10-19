@@ -45,12 +45,34 @@ export async function addAdvisory(uid: string, data: AdvisoryData) {
   await addDoc(ref, { ...data, createdAt: serverTimestamp() });
 }
 
+// Add fragility advisory (separate collection)
+// Structured fragility advisory type
+export interface FragilityAdvisoryData {
+  header: string;
+  sections: { title: string; summary: string; severity: "low" | "moderate" | "high" }[];
+  weather?: Record<string, unknown> | null;
+  createdAt?: unknown;
+}
+
+export async function addFragilityAdvisory(uid: string, data: FragilityAdvisoryData) {
+  const ref = collection(db, "farmers", uid, "fragility");
+  await addDoc(ref, { ...data, createdAt: serverTimestamp() });
+}
+
 // Fetch advisory history (latest first)
 export async function fetchAdvisories(uid: string, count: number = 10) {
   const ref = collection(db, "farmers", uid, "advisories");
   const q = query(ref, orderBy("createdAt", "desc"), limit(count));
   const snap = await getDocs(q);
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
+
+// Fetch fragility advisory history
+export async function fetchFragilityAdvisories(uid: string, count: number = 10) {
+  const ref = collection(db, "farmers", uid, "fragility");
+  const q = query(ref, orderBy("createdAt", "desc"), limit(count));
+  const snap = await getDocs(q);
+  return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as FragilityAdvisoryData) }));
 }
 
 // Update crop list for a farmer

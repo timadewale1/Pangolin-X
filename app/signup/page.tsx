@@ -29,6 +29,8 @@ type FormData = {
   state: string;
   lga: string;
   crops: string[]; // array of crop ids
+  language?: string;
+  title?: string;
 };
 
 // const CROP_OPTIONS = [
@@ -65,7 +67,7 @@ type FormData = {
 // ];
 
 export default function SignupPage() {
-  const { register, handleSubmit } = useForm<FormData>();
+  const { handleSubmit } = useForm<FormData>();
   const router = useRouter();
   const [localLoading, setLocalLoading] = useState(false);
   const [formState, setFormState] = useState<FormData>({
@@ -76,12 +78,28 @@ export default function SignupPage() {
     state: "",
     lga: "",
     crops: [],
+    language: "en",
+    title: "",
   });
+
+  const [accessCode, setAccessCode] = useState("");
+  const [accessCodeValid, setAccessCodeValid] = useState(false);
+  const [paymentRedirectUrl, setPaymentRedirectUrl] = useState("");
 
   const [cropSearch, setCropSearch] = useState("");
   const [stateSearch, setStateSearch] = useState("");
   const [lgaSearch, setLgaSearch] = useState("");
-  const [detected, setDetected] = useState<{ state?: string; lga?: string }>({});
+  // removed unused detected state
+
+  // Titles and languages used in the app
+  const TITLES = ["Mr", "Mrs", "Ms", "Dr", "Engr"];
+  const APP_LANGUAGES = [
+    { code: "en", label: "English" },
+    { code: "ha", label: "Hausa" },
+    { code: "yo", label: "Yoruba" },
+    { code: "ig", label: "Igbo" },
+    { code: "fr", label: "Pidgin" },
+  ];
 
   // prepare filtered arrays
   const filteredCrops = useMemo(
@@ -105,6 +123,24 @@ export default function SignupPage() {
     [lgasForState, lgaSearch]
   );
 
+  // Check for successful payment return
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('payment') === 'success') {
+      // Retrieve stored form data
+      const storedData = localStorage.getItem('pangolin-signup-data');
+      if (storedData) {
+        try {
+          const parsed = JSON.parse(storedData);
+          setFormState(parsed);
+          localStorage.removeItem('pangolin-signup-data');
+        } catch (err) {
+          console.error('Failed to parse stored form data:', err);
+        }
+      }
+    }
+  }, []);
+
   // improved geolocation
   useEffect(() => {
     if (!("geolocation" in navigator)) return;
@@ -116,14 +152,22 @@ export default function SignupPage() {
         try {
           const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
           const j = await res.json();
-          const princ = j.principalSubdivision ?? j.countryName ?? "";
-          const l = j.locality ?? j.city ?? j.municipality ?? "";
+          // Normalize state name for Nigeria
+          let princ = j.principalSubdivision ?? j.countryName ?? "";
+          if (princ.startsWith("Federal Capital Territory")) princ = "FCT";
+          if (princ === "Abuja") princ = "FCT";
+          if (princ === "Nassarawa") princ = "Nasarawa";
           if (princ && NIGERIA_STATES_LGAS[princ]) {
-            setFormState((p) => ({ ...p, state: princ, lga: NIGERIA_STATES_LGAS[princ].includes(l) ? l : "" }));
-            setDetected({ state: princ, lga: l });
+            // Try to match LGA more robustly
+            const lgas = NIGERIA_STATES_LGAS[princ];
+            const lga = j.locality ?? j.city ?? j.municipality ?? "";
+            // Fuzzy match
+            const matchedLga = lgas.find((x) => x.toLowerCase() === lga.toLowerCase()) || lgas.find((x) => lga && x.toLowerCase().includes(lga.toLowerCase()));
+            setFormState((p) => ({ ...p, state: princ, lga: matchedLga || "" }));
+            // removed setDetected (no longer used)
             return;
           }
-        } catch (err) {
+        } catch {
           // fallback to nominatim
         }
         // fallback: nominatim reverse
@@ -131,11 +175,16 @@ export default function SignupPage() {
           const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
           const j2 = await res2.json();
           const add = j2.address || {};
-          const state = add.state || add.region || "";
+          let state = add.state || add.region || "";
+          if (state.startsWith("Federal Capital Territory")) state = "FCT";
+          if (state === "Abuja") state = "FCT";
+          if (state === "Nassarawa") state = "Nasarawa";
           const lga = add.county || add.suburb || add.town || "";
           if (state && NIGERIA_STATES_LGAS[state]) {
-            setFormState((p) => ({ ...p, state, lga: NIGERIA_STATES_LGAS[state].includes(lga) ? lga : "" }));
-            setDetected({ state, lga });
+            const lgas = NIGERIA_STATES_LGAS[state];
+            const matchedLga = lgas.find((x) => x.toLowerCase() === lga.toLowerCase()) || lgas.find((x) => lga && x.toLowerCase().includes(lga.toLowerCase()));
+            setFormState((p) => ({ ...p, state, lga: matchedLga || "" }));
+            // removed setDetected (no longer used)
           }
         } catch (e) {
           console.warn("reverse geocode fallback failed", e);
@@ -155,10 +204,31 @@ export default function SignupPage() {
     });
   }
 
-  async function onSubmit(data: FormData) {
+  async function onSubmit() {
     try {
       setLocalLoading(true);
-      // create user first
+
+      // If no valid access code, initiate payment
+      if (!accessCodeValid) {
+        const payRes = await fetch('/api/paystack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: formState.email })
+        });
+        const payData = await payRes.json();
+        
+        if (payData.status && payData.data?.authorization_url) {
+          // Store form data in localStorage for retrieval after payment
+          localStorage.setItem('pangolin-signup-data', JSON.stringify(formState));
+          // Redirect to payment page
+          window.location.href = payData.data.authorization_url;
+          return;
+        } else {
+          throw new Error('Payment initialization failed');
+        }
+      }
+
+      // If we have a valid access code or coming back from successful payment, create account
       const create = await createUserWithEmailAndPassword(auth, formState.email, formState.password);
       const uid = create.user.uid;
       await setDoc(doc(db, "farmers", uid), {
@@ -168,7 +238,11 @@ export default function SignupPage() {
         state: formState.state,
         lga: formState.lga,
         crops: formState.crops,
+        language: formState.language ?? "en",
+        title: formState.title ?? "",
         createdAt: new Date().toISOString(),
+        paidAccess: true,
+        paymentDate: new Date().toISOString()
       });
       toast.success("Account created. Redirecting to login...");
       setTimeout(() => router.push("/login"), 900);
@@ -204,6 +278,40 @@ export default function SignupPage() {
 
             <label className="text-sm">Password</label>
             <input type="password" className="w-full border p-2 rounded mt-1 mb-3" value={formState.password} onChange={(e) => setFormState({ ...formState, password: e.target.value })} required />
+
+            <label className="text-sm">Access Code (Optional)</label>
+            <input 
+              type="text" 
+              className="w-full border p-2 rounded mt-1 mb-3" 
+              value={accessCode} 
+              onChange={async (e) => {
+                const code = e.target.value.toUpperCase();
+                setAccessCode(code);
+                // Validate code if length matches
+                if (code.length === 10) {
+                  try {
+                    const res = await fetch('/api/access-code', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ code })
+                    });
+                    const data = await res.json();
+                    setAccessCodeValid(data.valid);
+                    if (data.valid) {
+                      toast.success('Valid access code applied!');
+                    } else {
+                      toast.error(data.message || 'Invalid access code');
+                    }
+                  } catch (err) {
+                    console.error('Access code validation failed:', err);
+                    toast.error('Failed to validate access code');
+                  }
+                } else {
+                  setAccessCodeValid(false);
+                }
+              }}
+              placeholder="Enter access code if you have one"
+            />
 
             {/* CROPS */}
             <div className="mt-2">
@@ -261,6 +369,44 @@ export default function SignupPage() {
             </div>
 
             {/* LGAs */}
+            {/* LANGUAGE SELECTION */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Preferred language</label>
+                <span className="text-xs text-gray-500">Choose one</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {APP_LANGUAGES.map((l) => (
+                  <button
+                    key={l.code}
+                    type="button"
+                    onClick={() => setFormState({ ...formState, language: l.code })}
+                    className={`flex items-center gap-3 p-2 border rounded text-left ${formState.language === l.code ? "border-green-600 bg-green-50" : ""}`}
+                  >
+                    <div className="font-medium">{l.label}</div>
+                    <div className="text-xs text-gray-500 ml-auto">{l.code.toUpperCase()}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* TITLE SELECTION */}
+            <div className="mt-4">
+              <label className="text-sm font-medium">Title</label>
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {TITLES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setFormState({ ...formState, title: t })}
+                    className={`p-2 border rounded text-left ${formState.title === t ? "border-green-600 bg-green-50" : ""}`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {formState.state && (
               <div className="mt-4">
                 <label className="text-sm font-medium">Select LGA</label>

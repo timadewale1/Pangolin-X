@@ -1,7 +1,7 @@
 // app/check-weather/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { NIGERIA_STATES_LGAS } from "@/lib/nigeriaData";
 import Loader from "@/components/Loader";
 import { ArrowLeft, Cloud, Droplet, Thermometer } from "lucide-react";
@@ -48,18 +48,21 @@ export default function CheckWeather() {
         try {
           const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
           const j = await res.json();
-          const princ = j.principalSubdivision;
+          let princ = j.principalSubdivision;
+          if (princ && princ.startsWith("Federal Capital Territory")) princ = "FCT";
+          if (princ === "Abuja") princ = "FCT";
+          if (princ === "Nassarawa") princ = "Nasarawa";
           const loc = j.locality || j.city || j.county || "";
           if (princ && NIGERIA_STATES_LGAS[princ]) {
             setSelectedState(princ);
             // try match LGA
             const lgas = NIGERIA_STATES_LGAS[princ] || [];
-            const matched = lgas.find((x) => x.toLowerCase().includes((loc || "").toLowerCase()));
+            const matched = lgas.find((x) => x.toLowerCase() === loc.toLowerCase()) || lgas.find((x) => loc && x.toLowerCase().includes(loc.toLowerCase()));
             if (matched) setSelectedLga(matched);
             setGeoTrying(false);
             return;
           }
-        } catch (err) {
+        } catch {
           // fallback to nominatim
         }
         // fallback Nominatim
@@ -67,12 +70,15 @@ export default function CheckWeather() {
           const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
           const j2 = await res2.json();
           const add = j2.address || {};
-          const st = add.state || add.region || "";
+          let st = add.state || add.region || "";
+          if (st.startsWith("Federal Capital Territory")) st = "FCT";
+          if (st === "Abuja") st = "FCT";
+          if (st === "Nassarawa") st = "Nasarawa";
           const county = add.county || add.city || add.town || "";
           if (st && NIGERIA_STATES_LGAS[st]) {
             setSelectedState(st);
             const lgas = NIGERIA_STATES_LGAS[st] || [];
-            const matched = lgas.find((x) => x.toLowerCase().includes((county || "").toLowerCase()));
+            const matched = lgas.find((x) => x.toLowerCase() === county.toLowerCase()) || lgas.find((x) => county && x.toLowerCase().includes(county.toLowerCase()));
             if (matched) setSelectedLga(matched);
           } else {
             alert("Location found but not matched to a Nigerian state in dataset. Please select manually.");
