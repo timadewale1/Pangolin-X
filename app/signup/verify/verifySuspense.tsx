@@ -1,14 +1,18 @@
 "use client";
 
-import { Suspense } from 'react';
-import VerifyPaymentPage from './VerifyPaymentPageInner';
+import { Suspense } from "react";
+import VerifyPaymentPageInner from "./verifyInner";
 
-export default function VerifyPaymentPageWrapper() {
+export default function VerifyPaymentPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <p className="text-gray-600">Loading...</p>
-    </div>}>
-      <VerifyPaymentPage />
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      }
+    >
+      <VerifyPaymentPageInner />
     </Suspense>
   );
 }
