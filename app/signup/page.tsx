@@ -84,7 +84,10 @@ export default function SignupPage() {
 
   const [accessCode, setAccessCode] = useState("");
   const [accessCodeValid, setAccessCodeValid] = useState(false);
-  const [paymentRedirectUrl, setPaymentRedirectUrl] = useState("");
+  const [paymentSuccessReturn, setPaymentSuccessReturn] = useState(false);
+  const [missingSignupData, setMissingSignupData] = useState(false);
+  const [paystackConfig, setPaystackConfig] = useState<{ publicKey: string | null; packages: Record<string, { id: string; label: string; amountNaira: number }> | null } | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<string | null>('monthly');
 
   const [cropSearch, setCropSearch] = useState("");
   const [stateSearch, setStateSearch] = useState("");
@@ -123,8 +126,25 @@ export default function SignupPage() {
     [lgasForState, lgaSearch]
   );
 
+  // Access code client config
+  const ACCESS_CODE = "PANGOLIN-X";
+  const ACCESS_CODE_LENGTH = ACCESS_CODE.length; // 10
+
   // Check for successful payment return
   useEffect(() => {
+    // fetch paystack config (public key and available packages)
+    (async () => {
+      try {
+        const res = await fetch('/api/paystack/config');
+        const j = await res.json();
+        if (res.ok && j.success) setPaystackConfig({ publicKey: j.publicKey, packages: j.packages });
+        else setPaystackConfig({ publicKey: null, packages: null });
+      } catch (e) {
+        console.warn('Failed to load paystack config', e);
+        setPaystackConfig({ publicKey: null, packages: null });
+      }
+    })();
+
     const searchParams = new URLSearchParams(window.location.search);
     if (searchParams.get('payment') === 'success') {
       // Retrieve stored form data
@@ -132,11 +152,19 @@ export default function SignupPage() {
       if (storedData) {
         try {
           const parsed = JSON.parse(storedData);
+          if (!parsed || typeof parsed !== 'object' || !parsed.email) {
+            setMissingSignupData(true);
+            return;
+          }
           setFormState(parsed);
+          setPaymentSuccessReturn(true);
           localStorage.removeItem('pangolin-signup-data');
         } catch (err) {
           console.error('Failed to parse stored form data:', err);
+          setMissingSignupData(true);
         }
+      } else {
+        setMissingSignupData(true);
       }
     }
   }, []);
@@ -208,30 +236,149 @@ export default function SignupPage() {
     try {
       setLocalLoading(true);
 
-      // If no valid access code, initiate payment
-      if (!accessCodeValid) {
-        if (!formState.email || !formState.email.includes('@')) {
-          toast.error('Please enter a valid email before payment');
-          setLocalLoading(false);
-          return;
+      // Validate email regardless of payment/access code
+      if (!formState.email || !formState.email.includes('@')) {
+        toast.error('Please enter a valid email');
+        setLocalLoading(false);
+        return;
+      }
+
+      // If user entered an access code but didn't blur/validate, validate it now
+      if (accessCode && accessCode.length === ACCESS_CODE_LENGTH && !accessCodeValid) {
+        try {
+          const res = await fetch('/api/access-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: accessCode })
+          });
+          const data = await res.json();
+          setAccessCodeValid(!!data.valid);
+          if (data.valid) {
+            toast.success('Valid access code applied!');
+          } else {
+            toast.error(data.message || 'Invalid access code');
+          }
+        } catch (err) {
+          console.error('Access code validation failed:', err);
+          toast.error('Server error validating access code');
         }
+      }
+
+      // If we have a valid access code, proceed directly to account creation
+      if (accessCodeValid || paymentSuccessReturn) {
+        console.log('Bypassing payment: access code valid or returning from payment success');
+      } else {
+        // No valid access code, so initiate payment via inline Paystack modal
+        // Store latest form data as a safety-net
+        localStorage.setItem('pangolin-signup-data', JSON.stringify(formState));
+
         const payRes = await fetch('/api/paystack', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: formState.email })
+        body: JSON.stringify({ email: formState.email, pkg: selectedPackage })
         });
         const payData = await payRes.json();
-        if (payRes.ok && payData.status && payData.data?.authorization_url) {
-          // Store form data in localStorage for retrieval after payment
-          localStorage.setItem('pangolin-signup-data', JSON.stringify(formState));
-          // Redirect to payment page
-          window.location.href = payData.data.authorization_url;
-          return;
-        } else {
+        if (!payRes.ok) {
           const errorMsg = payData?.message || payData?.error || 'Payment initialization failed';
           toast.error(errorMsg);
           throw new Error(errorMsg);
         }
+
+  // Ensure Paystack public key is available from server config
+  const PAYSTACK_PUBLIC_KEY = paystackConfig?.publicKey || null;
+        // If public key missing, fallback to redirect (legacy behavior)
+        if (!PAYSTACK_PUBLIC_KEY || !payData?.data) {
+          if (payData?.data?.authorization_url) {
+            window.location.href = payData.data.authorization_url;
+            return;
+          }
+          toast.error('Payment service misconfigured');
+          throw new Error('Payment service misconfigured');
+        }
+
+        // Dynamically load Paystack inline script if needed
+        const loadScript = () => new Promise<void>((resolve, reject) => {
+          if (typeof window === 'undefined') return reject(new Error('No window'));
+          if ((window as unknown as { PaystackPop?: unknown }).PaystackPop) return resolve();
+          const s = document.createElement('script');
+          s.src = 'https://js.paystack.co/v1/inline.js';
+          s.onload = () => resolve();
+          s.onerror = () => reject(new Error('Failed to load Paystack script'));
+          document.body.appendChild(s);
+        });
+
+        try {
+          await loadScript();
+        } catch (err) {
+          console.error('Failed to load Paystack inline script:', err);
+          // fallback to redirect
+          if (payData?.data?.authorization_url) {
+            window.location.href = payData.data.authorization_url;
+            return;
+          }
+          throw err;
+        }
+
+        // Open paystack inline modal
+  const reference = payData.data.reference || payData.data.access_code || String(Date.now());
+        const amount = payData.data.amount ?? 2000 * 100;
+  const paystackGlobal = (window as unknown as { PaystackPop?: { setup: (opts: { key: string; email: string; amount?: number; ref?: string; onClose?: () => void; callback?: (resp: { reference?: string }) => void }) => { openIframe: () => void } } }).PaystackPop;
+  const handler = paystackGlobal!.setup({
+    key: PAYSTACK_PUBLIC_KEY as string,
+          email: formState.email,
+          amount,
+          ref: reference,
+          onClose: function() {
+            toast.info('Payment window closed');
+          },
+          callback: async function(response: { reference?: string }) {
+            // Verify server-side
+            try {
+              const vr = await fetch('/api/paystack/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reference: response.reference })
+              });
+              const vdata = await vr.json();
+                if (vr.ok && vdata.data && vdata.data.status === 'success') {
+                // proceed to create user now (payment done in-page)
+                try {
+                  const create = await createUserWithEmailAndPassword(auth, formState.email, formState.password);
+                  const uid = create.user.uid;
+                  await setDoc(doc(db, 'farmers', uid), {
+                    name: formState.name,
+                    email: formState.email,
+                    phone: formState.phone,
+                    state: formState.state,
+                    lga: formState.lga,
+                    crops: formState.crops,
+                    language: formState.language ?? 'en',
+                    title: formState.title ?? '',
+                    createdAt: new Date().toISOString(),
+                    paidAccess: true,
+                    paymentDate: new Date().toISOString(),
+                    // store plan so dashboard can show subscription info; server verify will also update/overwrite when available
+                    plan: selectedPackage ?? null,
+                    accessCodeUsed: false,
+                  });
+                  toast.success('Account created. Redirecting to login...');
+                  setTimeout(() => router.push('/login'), 900);
+                  } catch (e) {
+                  console.error('Failed to create user after payment:', e);
+                  toast.error('Failed to create account after payment');
+                }
+              } else {
+                toast.error('Payment verification failed');
+                console.error('Paystack verify failed', vdata);
+              }
+            } catch (err) {
+              console.error('Payment verification error:', err);
+              toast.error('Payment verification error');
+            }
+          }
+        });
+        handler.openIframe();
+        return;
       }
 
       // If we have a valid access code or coming back from successful payment, create account
@@ -248,8 +395,46 @@ export default function SignupPage() {
         title: formState.title ?? "",
         createdAt: new Date().toISOString(),
         paidAccess: true,
-        paymentDate: new Date().toISOString()
+        paymentDate: new Date().toISOString(),
+        plan: paymentSuccessReturn ? (selectedPackage ?? null) : null,
+        accessCodeUsed: accessCodeValid ? true : false,
       });
+
+      // If access code was used, consume it now via server-side client endpoint (with ID token)
+      if (accessCode && accessCodeValid) {
+        try {
+          const token = await auth.currentUser?.getIdToken();
+          if (!token) throw new Error('Missing auth token for consume');
+          const consumeRes = await fetch('/api/access-code/consume-client', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ code: accessCode })
+          });
+          const cres = await consumeRes.json();
+          if (!consumeRes.ok || !cres.success) {
+            // rollback: delete created farmer and auth user via client-protected endpoint
+            try {
+              const delRes = await fetch('/api/admin/delete-farmer-client', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              });
+              const delj = await delRes.json();
+              console.warn('Rollback result', delj);
+            } catch (delErr) {
+              console.error('Failed to rollback farmer after consume failure:', delErr);
+            }
+            toast.error(cres.message || 'Failed to consume access code; signup aborted');
+            setLocalLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error('Consume access code failed:', err);
+          toast.error('Failed to consume access code; signup aborted');
+          setLocalLoading(false);
+          return;
+        }
+      }
+
       toast.success("Account created. Redirecting to login...");
       setTimeout(() => router.push("/login"), 900);
     } catch (err: unknown) {
@@ -263,6 +448,19 @@ export default function SignupPage() {
     }
   }
 
+
+  if (missingSignupData) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <div className="bg-white p-8 rounded shadow text-center max-w-md">
+          <h2 className="text-xl font-bold mb-4 text-red-600">Missing signup data</h2>
+          <p className="mb-4">We couldn&apos;t restore your signup details after payment. Please start the signup process again.</p>
+          <a href="/signup" className="inline-block bg-green-600 text-white px-4 py-2 rounded font-semibold">Return to Signup</a>
+        </div>
+      </div>
+    );
+  }
+
   if (localLoading) return <Loader />;
 
   return (
@@ -272,6 +470,19 @@ export default function SignupPage() {
         <div className="grid md:grid-cols-2 gap-6">
           <form className="bg-white p-6 rounded shadow" onSubmit={handleSubmit(onSubmit)}>
             <h2 className="text-2xl font-semibold mb-3 text-green-700">Create account</h2>
+
+            {/* Package selector */}
+            <div className="mb-4">
+              <label className="text-sm font-medium">Choose plan</label>
+              <div className="flex gap-2 mt-2">
+                <button type="button" onClick={() => setSelectedPackage('monthly')} className={`px-3 py-2 rounded border ${selectedPackage === 'monthly' ? 'bg-white text-green-700 border-green-600' : 'bg-transparent text-white/80 border-white/10'}`}>
+                  Monthly — ₦1,500
+                </button>
+                <button type="button" onClick={() => setSelectedPackage('yearly')} className={`px-3 py-2 rounded border ${selectedPackage === 'yearly' ? 'bg-white text-green-700 border-green-600' : 'bg-transparent text-white/80 border-white/10'}`}>
+                  Yearly — ₦15,000
+                </button>
+              </div>
+            </div>
 
             <label className="text-sm">Full name</label>
             <input className="w-full border p-2 rounded mt-1 mb-2" value={formState.name} onChange={(e) => setFormState({ ...formState, name: e.target.value })} required />
@@ -286,34 +497,40 @@ export default function SignupPage() {
             <input type="password" className="w-full border p-2 rounded mt-1 mb-3" value={formState.password} onChange={(e) => setFormState({ ...formState, password: e.target.value })} required />
 
             <label className="text-sm">Access Code (Optional)</label>
-            <input 
+            <input
               type="text"
               className="w-full border p-2 rounded mt-1 mb-3"
               value={accessCode}
-              onChange={async (e) => {
-                const code = e.target.value.toUpperCase();
+              onChange={(e) => {
+                // keep local state but don't call server on every keystroke
+                const v = e.target.value.toUpperCase();
+                setAccessCode(v);
+                if (v.length !== ACCESS_CODE_LENGTH) setAccessCodeValid(false);
+              }}
+              onBlur={async (e) => {
+                const raw = e.target.value || "";
+                const code = raw.trim().toUpperCase();
                 setAccessCode(code);
-                // Validate code if length matches expected (match server, e.g. 11 for PANGOLIN-X)
-                if (code.length === 11) {
-                  try {
-                    const res = await fetch('/api/access-code', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ code })
-                    });
-                    const data = await res.json();
-                    setAccessCodeValid(data.valid);
-                    if (data.valid) {
-                      toast.success('Valid access code applied!');
-                    } else {
-                      toast.error(data.message || 'Invalid access code');
-                    }
-                  } catch (err) {
-                    console.error('Access code validation failed:', err);
-                    toast.error('Server error validating access code');
-                  }
-                } else {
+                if (code.length !== ACCESS_CODE_LENGTH) {
                   setAccessCodeValid(false);
+                  return;
+                }
+                try {
+                  const res = await fetch('/api/access-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                  });
+                  const data = await res.json();
+                  setAccessCodeValid(!!data.valid);
+                  if (data.valid) {
+                    toast.success('Valid access code applied!');
+                  } else {
+                    toast.error(data.message || 'Invalid access code');
+                  }
+                } catch (err) {
+                  console.error('Access code validation failed:', err);
+                  toast.error('Server error validating access code');
                 }
               }}
               placeholder="Enter access code if you have one"
@@ -451,10 +668,11 @@ export default function SignupPage() {
             <ul className="list-disc pl-5 space-y-2 text-sm">
               <li>Get weather updates for your exact LGA.</li>
               <li>Receive AI-based advice tailored to your crops.</li>
+              <li>Fragility & risk advisories to protect your harvest.</li>
               <li>Save your farm profile and preferences.</li>
             </ul>
             <div className="mt-6 rounded overflow-hidden">
-              <Image src="https://images.unsplash.com/photo-1599058917212-d750089bc07d?q=80&w=800&auto=format&fit=crop" alt="agri" width={600} height={320} className="object-cover" />
+              <Image src="https://images.unsplash.com/photo-1620200423727-8127f75d7f53?q=80&w=600&auto=format&fit=crop" alt="agri" width={600} height={320} className="object-cover" />
             </div>
           </aside>
         </div>

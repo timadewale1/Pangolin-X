@@ -5,7 +5,6 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import WAVES from "vanta/dist/vanta.waves.min";
 import { LanguageProvider } from "@/context/LanguageContext";
-import LanguageButton from "@/components/LanguageButton";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const [vanta, setVanta] = useState<{ destroy: () => void } | null>(null);
@@ -28,6 +27,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" href="/Pangolin.png" />
+        <meta property="og:title" content="Pangolin-x — Smart weather & AI advisory for farmers" />
+        <meta property="og:description" content="Local weather forecasts and AI-driven crop advice for Nigerian farmers." />
+        <meta property="og:image" content="/Pangolin.png" />
+        <meta name="twitter:card" content="summary_large_image" />
+      </head>
       <body>
         <div ref={ref} className="absolute inset-0 -z-10 pointer-events-none" />
         <LanguageProvider>

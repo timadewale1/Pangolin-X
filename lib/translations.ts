@@ -3,7 +3,7 @@ export type Lang = "en" | "ha" | "ig" | "yo" | "pg";
 
 export const translations: Record<Lang, Record<string, string>> = {
   en: {
-    title: "Smart Weather and AI Advisory for Nigerian Farmers",
+    title: "Climate Smart Weather, Fragility and AI Advisory for Nigerian Farmers",
     subtitle: "Stay ahead of the weather. Get real-time forecasts and AI-driven agricultural advice for your local government area.",
     howItWorks: "How Pangolin-x Works",
     howItWorksDesc: "Pangolin-x connects farmers to local weather intelligence and expert AI farming advice.",
@@ -20,12 +20,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     getStarted: "Get Started",
     checkWeather: "Check Weather",
     getAIAdvice: "Get AI Advice",
-    signUpFree: "Sign Up Free",
+  signUp: "Sign Up",
     checkYourWeather: "Check Your Weather",
     features_local_weather: "Local Weather Forecast",
+    features_local_weather_desc: "Hyper-local weather and Fragility for your LGA",
     features_ai_advisor: "AI Crop Advisor",
+    features_ai_advisor_desc: "Crop-specific AI recommendations",
     features_multi_language: "Multi-Language",
+    features_multi_language_desc: "English, Hausa, Igbo, Yoruba, Pidgin",
     features_mobile: "Mobile Friendly",
+    features_mobile_desc: "Works even on slow networks",
     testimonials: "What Farmers Say",
 
 
@@ -117,6 +121,22 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_harvest_ready_desc: "Crop ready for harvest.",
     cropAdviceDesc: "AI-generated farming advice based on crop stage and current weather.",
     
+    // Pricing section translations
+    pricing_title: "Plans & Pricing",
+    pricing_subtitle: "Choose a plan that fits your farm. Monthly and yearly subscriptions provide AI advisory and hyper-local weather.",
+    pricing_monthly_label: "Monthly",
+    pricing_monthly_period: "Per month — renewable",
+    pricing_yearly_label: "Yearly",
+    pricing_yearly_period: "Per year — save 2 months",
+    pricing_feature_ai: "AI crop advisories",
+    pricing_feature_weather: "Hyper-local weather",
+    pricing_feature_alerts: "Fragility & risk alerts",
+    pricing_feature_all: "All monthly features",
+    pricing_feature_priority_support: "Priority support",
+    pricing_feature_best_value: "Best value for frequent users",
+    pricing_signup_monthly: "Sign up — Monthly",
+    pricing_signup_yearly: "Sign up — Yearly",
+
     // Fragility related translations
     low_severity: "Low",
     moderate_severity: "Moderate", 
@@ -125,7 +145,7 @@ export const translations: Record<Lang, Record<string, string>> = {
   },
 
   ha: {
-    title: "Hankali Kan Yanayi Ga Manoma Na Najeriya",
+title: "Kilomit Aminka, Ihu Igwe, Kusanyi da Shawarwari AI don Manoma Najeriya",
     subtitle: "Ku kasance gaba da yanayi. Sami hasashen yanayi na ainihi da shawarwarin noma na AI don yankin karamar hukumar ku.",
     howItWorks: "Yadda Pangolin-x ke Aiki",
     howItWorksDesc: "Pangolin-x yana haɗa manoma zuwa hankalin yanayi na gida da ƙwararrun shawarwarin noma na AI.",
@@ -142,12 +162,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     getStarted: "Fara",
     checkWeather: "Duba Yanayi",
     getAIAdvice: "Sami Shawara AI",
-    signUpFree: "Yi Rijista Kyauta",
+  signUp: "Yi Rijista",
     checkYourWeather: "Duba Yanayin ka",
     features_local_weather: "Hasashen Yanayi na Yanki",
+    features_local_weather_desc: "Hasashen yanayi na wurin da barazanar yankin LGA",
     features_ai_advisor: "Mai Ba da Shawarwari na AI",
+    features_ai_advisor_desc: "Shawarwarin AI na musamman na kowane amfanin gona",
     features_multi_language: "Harsuna Da Yawa",
+    features_multi_language_desc: "Turanci, Hausa, Igbo, Yoruba, Pidgin",
     features_mobile: "Daidaitacce ta Wayar hannu",
+    features_mobile_desc: "Yana aiki ko da a cikin hanyar sadarwa masu sauƙi",
     testimonials: "Abin da Manoma suka Faɗa",
 
     // dashboard
@@ -223,6 +247,23 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_harvest_ready_label: "Shiri girbi",
     stage_harvest_ready_desc: "Amfanin gona ya shirya don girbi.",
     cropAdviceDesc: "Shawarwarin noma na AI bisa ga matakin amfanin gona da yanayi na yanzu.",
+    
+    // Pricing section translations
+    pricing_title: "Tsarin & Farashin",
+    pricing_subtitle: "Zaɓi tsari da ya dace da gonarki. Biyan kuɗi na wata-wata da na shekara suna ba da shawara ta AI da hasashen yanayin wurin.",
+    pricing_monthly_label: "Kowane Wata",
+    pricing_monthly_period: "A kowane wata — ƙarawar lokaci",
+    pricing_yearly_label: "Na Shekara",
+    pricing_yearly_period: "A shekara — ka ajiye watanni 2",
+    pricing_feature_ai: "Shawara ta AI kan amfanin gona",
+    pricing_feature_weather: "Hasashen yanayi na yanki",
+    pricing_feature_alerts: "Faɗakarwa kan barazana",
+    pricing_feature_all: "Duk abubuwan da ke cikin wata-wata",
+    pricing_feature_priority_support: "Goyon baya na musamman",
+    pricing_feature_best_value: "Mafi kyau ga waɗanda ke amfani sosai",
+    pricing_signup_monthly: "Yi rijista — Na wata-wata",
+    pricing_signup_yearly: "Yi rijista — Na shekara",
+
     // Fragility related translations
     low_severity: "Ƙarami",
     moderate_severity: "Matsakaici",
@@ -238,7 +279,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     // ... keep your existing translations for all keys (already provided earlier)
     // I'll include the same added keys in Igbo. For brevity here: replicate the pattern above.
     // (In your actual file you should paste the full Igbo translations including the new keys)
-    title: "Amami Ọtụtụ Maka Ndị Ọrụ Ugbo Na Naịjíríà",
+title: "Otu Nna-otu, Otu Oji, Nkweghachi, ma Ntuziaka AI don Ndị Ọrụ Ugbo Naijíríà",
     subtitle: "Nọ n’ihu ihu igwe. Nweta amụma ihu igwe n’oge na ndụ na ndụmọdụ ọrụ ugbo sitere na AI maka mpaghara gị.",
     howItWorks: "Otu Pangolin-x Si Arụ Ọrụ",
     howItWorksDesc: "Pangolin-x na-ejikọ ndị ọrụ ugbo na amamihe ihu igwe ebe obibi na ndụmọdụ AI.",
@@ -256,12 +297,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     getStarted: "Malite",
     checkWeather: "Lelee Ihu Igwe",
     getAIAdvice: "Nweta Ntuziaka AI",
-    signUpFree: "Deba aha n'efu",
+  signUp: "Deba aha",
     checkYourWeather: "Lelee ihu igwe gị",
     features_local_weather: "Amụma Ihu Igwe Ebe",
+    features_local_weather_desc: "Amụma ihu igwe na ahụ ike maka LGA gị",
     features_ai_advisor: "Onye Nduzi Mkpụrụ",
+    features_ai_advisor_desc: "Ndụmọdụ AI maka mkpụrụ ọ bụla",
     features_multi_language: "Asụsụ Dị Iche",
+    features_multi_language_desc: "Bekee, Hausa, Igbo, Yoruba, Pidgin",
     features_mobile: "Na-arụ Ọrụ Na Mobile",
+    features_mobile_desc: "Na-arụ ọrụ ọbụna na netwọk nke na-adịghị mma",
     testimonials: "Ihe Ndị Ọrụ Ugbo Na-ekwu",
 
     dashboard_title: "Ihe Nchekwa Pangolin-x",
@@ -333,6 +378,23 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_harvest_ready_label: "Kwadebere iri",
     stage_harvest_ready_desc: "Mkpụrụ dị njikere maka iri.",
     cropAdviceDesc: "Ntuziaka ọrụ ugbo sitere na AI dabere na ọkwa mkpụrụ na ihu igwe ugbu a.",
+    
+    // Pricing section translations
+    pricing_title: "Atụmatụ & Ọnụahịa",
+    pricing_subtitle: "Họrọ atụmatụ dabara na ubi gị. Ndenye aha kwa ọnwa na kwa afọ na-enye ndụmọdụ AI na ihu igwe nke gburugburu.",
+    pricing_monthly_label: "Kwa Ọnwa",
+    pricing_monthly_period: "Kwa ọnwa — nwere ike ịmegharị",
+    pricing_yearly_label: "Kwa Afọ",
+    pricing_yearly_period: "Kwa afọ — zọpụta ọnwa 2",
+    pricing_feature_ai: "Ndụmọdụ mkpụrụ AI",
+    pricing_feature_weather: "Ihu igwe mpaghara",
+    pricing_feature_alerts: "Ịdọ aka ná ntị maka ihe egwu",
+    pricing_feature_all: "Niile atụmatụ kwa ọnwa",
+    pricing_feature_priority_support: "Nkwado pụrụ iche",
+    pricing_feature_best_value: "Kacha mma maka ndị na-eji ya eme ihe mgbe niile",
+    pricing_signup_monthly: "Debanye aha — Kwa ọnwa",
+    pricing_signup_yearly: "Debanye aha — Kwa afọ",
+
     // Fragility related translations
     low_severity: "Nnukwu",
     moderate_severity: "Nkezi",
@@ -346,7 +408,7 @@ export const translations: Record<Lang, Record<string, string>> = {
 
   yo: {
     // replicate same extra keys in Yoruba; included a subset here — paste full Yoruba with everything in practice
-    title: "Oju-ojo ọlọgbọn fun awọn agbe Naijiria",
+title: "Otu Awo, Otu Oji, Iwọle, ati Imọran AI fun Awọn Agbe Naijiria",
     subtitle: "Maa ṣàkóso oju-ọjọ. Gba awọn asọtẹlẹ akoko gidi ati imọran oko AI fun agbegbe rẹ.",
     howItWorks: "Bí Pangolin-x Ṣe N ṣiṣẹ",
     howItWorksDesc: "Pangolin-x so awọn agbe pọ mọ imọ oju-ọjọ agbegbe ati imọran iṣẹ-ogbin AI.",
@@ -363,12 +425,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     getStarted: "Bẹrẹ",
     checkWeather: "Ṣayẹwo Oju-ojo",
     getAIAdvice: "Gba Imọran AI",
-    signUpFree: "Forukọsilẹ Free",
+  signUp: "Forukọsilẹ",
     checkYourWeather: "Ṣayẹwo oju-ọjọ rẹ",
     features_local_weather: "Asọtẹlẹ Oju-Ojo Agbegbe",
+    features_local_weather_desc: "Oju-ọjọ agbegbe ati ewu fun LGA rẹ",
     features_ai_advisor: "Oludamọran Oko AI",
+    features_ai_advisor_desc: "Imọran AI pato fun irugbin kọọkan",
     features_multi_language: "Ọpọlọpọ Ede",
+    features_multi_language_desc: "Gẹẹsi, Hausa, Igbo, Yoruba, Pidgin",
     features_mobile: "Ore foonu alagbeka",
+    features_mobile_desc: "Ó ń ṣiṣẹ paapaa ni ori nẹtiwọki ti ko dara",
     testimonials: "Ohun ti Awọn Agbe sọ",
 
     dashboard_title: "Dasibodu Pangolin-x",
@@ -440,6 +506,23 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_harvest_ready_label: "Seto fun ikore",
     stage_harvest_ready_desc: "Irugbin ṣetan fun ikore.",
     cropAdviceDesc: "Imọran iṣẹ-ogbin ti a ṣe nipasẹ AI da lori ipele irugbin ati oju-ọjọ lọwọlọwọ.",
+    
+    // Pricing section translations
+    pricing_title: "Awọn Eto & Owo",
+    pricing_subtitle: "Yan eto to ba oko rẹ mu. Awọn alabapin oṣooṣu ati ododun ni imọran AI ati oju-ọjọ agbegbe.",
+    pricing_monthly_label: "Oṣooṣu",
+    pricing_monthly_period: "Ni oṣooṣu — ṣe atunṣe",
+    pricing_yearly_label: "Ododun",
+    pricing_yearly_period: "Ni ọdun — fi oṣu 2 pamọ",
+    pricing_feature_ai: "Imọran oko AI",
+    pricing_feature_weather: "Oju-ọjọ agbegbe",
+    pricing_feature_alerts: "Ikilo ewu",
+    pricing_feature_all: "Gbogbo awọn ẹya oṣooṣu",
+    pricing_feature_priority_support: "Atilẹyin pataki",
+    pricing_feature_best_value: "O dara julọ fun awọn ti o n lo nigbogbo",
+    pricing_signup_monthly: "Forukọsilẹ — Oṣooṣu",
+    pricing_signup_yearly: "Forukọsilẹ — Ododun",
+
     // Fragility related translations
     low_severity: "Kekere",
     moderate_severity: "Aarin", 
@@ -452,8 +535,8 @@ export const translations: Record<Lang, Record<string, string>> = {
   },
 
   pg: {
-    title: "Smart weather wey go help Naija farmers",
-    subtitle: "Make you dey ahead of weather. Get correct forecasts and AI farming advice for your LG area.",
+title: "Climate Smart Weather, Fragility and AI Advice for Naija Farmers",    
+subtitle: "Make you dey ahead of weather. Get correct forecasts and AI farming advice for your LG area.",
     howItWorks: "How Pangolin-x Dey Work",
     howItWorksDesc: "Pangolin-x dey connect farmers to local weather sense and AI farming advice.",
     features: "Strong Features",
@@ -463,12 +546,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     getStarted: "Start",
     checkWeather: "Check Weather",
     getAIAdvice: "Get AI Advice",
-    signUpFree: "Sign Up Free",
+  signUp: "Sign Up",
     checkYourWeather: "Check Your Weather",
     features_local_weather: "Local Weather Forecast",
+    features_local_weather_desc: "Weather and risk alerts for your LG area",
     features_ai_advisor: "AI Crop Advisor",
+    features_ai_advisor_desc: "Advice for each type of crop wey you dey plant",
     features_multi_language: "Multi-Language",
+    features_multi_language_desc: "English, Hausa, Igbo, Yoruba, Pidgin",
     features_mobile: "Mobile Friendly",
+    features_mobile_desc: "E dey work even when network no too good",
     testimonials: "Wetins Farmers Talk",
 
     // dashboard
@@ -541,6 +628,23 @@ export const translations: Record<Lang, Record<string, string>> = {
     stage_harvest_ready_label: "Harvest Ready",
     stage_harvest_ready_desc: "Crop ready for harvest.",
     cropAdviceDesc: "AI-generated farming advice based on crop stage and current weather.",
+    
+    // Pricing section translations
+    pricing_title: "Plans & Pricing",
+    pricing_subtitle: "Choose plan wey go fit your farm. Monthly and yearly subscription dey give AI advice and local weather.",
+    pricing_monthly_label: "Monthly",
+    pricing_monthly_period: "Per month — you fit renew am",
+    pricing_yearly_label: "Yearly",
+    pricing_yearly_period: "Per year — save 2 months money",
+    pricing_feature_ai: "AI farming advice",
+    pricing_feature_weather: "Local weather",
+    pricing_feature_alerts: "Risk alerts",
+    pricing_feature_all: "All monthly features",
+    pricing_feature_priority_support: "Better support",
+    pricing_feature_best_value: "Best price if you dey use am well-well",
+    pricing_signup_monthly: "Sign up — Monthly",
+    pricing_signup_yearly: "Sign up — Yearly",
+
     // Fragility related translations
     low_severity: "Low",
     moderate_severity: "Moderate",

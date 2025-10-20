@@ -1,9 +1,26 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import admin from "firebase-admin";
+import { readFileSync } from "fs";
+import path from "path";
+
+// Initialize firebase-admin using serviceAccountKey.json in repo root
+if (!admin.apps.length) {
+  try {
+    const keyPath = path.join(process.cwd(), "serviceAccountKey.json");
+    const keyRaw = readFileSync(keyPath, "utf8");
+    const serviceAccount = JSON.parse(keyRaw);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
+    });
+  } catch (err) {
+    console.error("Failed to initialize firebase-admin:", err);
+  }
+}
+
+const db = admin.firestore();
 
 const VALID_CODE = "PANGOLIN-X";
-const MAX_USES = 50;
+const DEFAULT_MAX_USES = 50;
 
 export async function POST(req: Request) {
   try {
@@ -14,24 +31,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ valid: false, message: "Invalid code" }, { status: 400 });
     }
 
-    // Check remaining uses
-    const codeRef = doc(db, "access_codes", VALID_CODE);
-    const codeDoc = await getDoc(codeRef);
-    const usageCount = codeDoc.exists() ? (codeDoc.data().uses ?? 0) : 0;
+    const codeRef = db.collection("access_codes").doc(VALID_CODE);
+    let docSnap;
+    try {
+      docSnap = await codeRef.get();
+    } catch (err) {
+      console.error("Admin Firestore read error:", err);
+      return NextResponse.json({ valid: false, message: "Database error (read)" }, { status: 500 });
+    }
 
-    if (usageCount >= MAX_USES) {
+    const data = docSnap.exists ? docSnap.data() : {};
+    const usageCount = data?.uses ?? 0;
+    const maxUses = data?.maxUses ?? DEFAULT_MAX_USES;
+
+    if (usageCount >= maxUses) {
       return NextResponse.json({ valid: false, message: "Code has expired" }, { status: 400 });
     }
 
-    // Increment usage count
-    await setDoc(codeRef, { 
-      uses: usageCount + 1,
-      lastUsed: new Date().toISOString()
-    }, { merge: true });
-
-    return NextResponse.json({ valid: true });
+    // Return validity and counts but DO NOT increment here; consumption happens on successful signup
+    return NextResponse.json({ valid: true, uses: usageCount, maxUses });
   } catch (err) {
-    console.error("Access code check failed:", err);
+    console.error("Access code admin check failed:", err);
     return NextResponse.json({ valid: false, message: "Server error" }, { status: 500 });
   }
 }

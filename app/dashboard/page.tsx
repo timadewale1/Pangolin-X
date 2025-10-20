@@ -34,6 +34,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import LanguageButton from "@/components/LanguageButton";
 import FragilityDetailModal from "@/components/FragilityDetailModal";
 import { useLanguage } from "@/context/LanguageContext";
+import RenewalModal from "@/components/ui/RenewalModal";
 // image is served from /Pangolin-x.jpg in the public folder; reference it directly in <Image src="/Pangolin-x.jpg" ... />
 // ...existing code...
 
@@ -111,6 +112,10 @@ export default function DashboardPage() {
 
   const [advisories, setAdvisories] = useState<Advisory[]>([]);
   const [fragility, setFragility] = useState<FragilityResp | null>(null);
+  const [subscriptionActive, setSubscriptionActive] = useState<boolean>(false);
+  const [nextPaymentDate, setNextPaymentDate] = useState<Date | null>(null);
+  const [planLabel, setPlanLabel] = useState<string | null>(null);
+  const [renewalOpen, setRenewalOpen] = useState(false);
   const [fragilityHistory, setFragilityHistory] = useState<FragilityResp[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [adviceLastDoc, setAdviceLastDoc] = useState<unknown>(null); // Firestore doc snapshot
@@ -166,26 +171,16 @@ export default function DashboardPage() {
 
 // load farmer doc + auto-generate latest advisory on mount/login
 useEffect(() => {
-  if (authLoading) return;
-  if (!user) {
-    setLoading(false);
-    return;
-  }
-}, [user, authLoading]);
-
-// Open language modal if farm exists and language is missing
-useEffect(() => {
-  if (farm && !farm.language) {
-    setLangModalOpen(true);
-  }
-}, [farm]);
-
-useEffect(() => {
-  // load farmer doc + auto-generate latest advisory on mount/login
   const loadDashboard = async () => {
     setLoading(true);
     try {
-  const ref = doc(db, "farmers", user!.uid);
+      if (authLoading) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const ref = doc(db, "farmers", user.uid);
       const snap = await getDoc(ref);
       if (!snap.exists()) {
         setFarm(null);
@@ -193,51 +188,53 @@ useEffect(() => {
         setLoading(false);
         return;
       }
+
       const data = snap.data() as FarmerDoc;
       setFarm(data);
 
-      // check cropStatus: prompt if missing -> enforce
-      const missingStages = (data.crops ?? []).filter((c) => !(data.cropStatus && data.cropStatus[c] && data.cropStatus[c].stage));
-      if (missingStages.length > 0) {
-        // open stage modal and prevent normal interactions
-        setStageModalOpen(true);
+      // compute subscription info
+      const snapData = snap.data() as Record<string, unknown>;
+      const plan = (snapData?.plan as string) ?? null;
+      const accessCodeUsed = Boolean(snapData?.accessCodeUsed === true);
+      const paidAccess = Boolean(snapData?.paidAccess === true);
+      const npRaw = snapData?.nextPaymentDate ?? snapData?.paymentDate ?? null;
+      let npDate: Date | null = null;
+      if (npRaw) {
+        if (typeof npRaw === "string" || typeof npRaw === "number") npDate = new Date(npRaw as string | number);
+        else if (typeof npRaw === "object" && npRaw !== null) {
+          const ts = npRaw as { seconds?: number; nanoseconds?: number };
+          if (typeof ts.seconds === 'number') npDate = new Date(ts.seconds * 1000);
+        }
       }
+      setNextPaymentDate(npDate);
+      setPlanLabel(plan ?? null);
+      const now = new Date();
+      setSubscriptionActive(Boolean(accessCodeUsed || (paidAccess && npDate && npDate > now)));
+
+      // prompt for missing crop stages
+      const missingStages = (data.crops ?? []).filter((c) => !(data.cropStatus && data.cropStatus[c] && data.cropStatus[c].stage));
+      if (missingStages.length > 0) setStageModalOpen(true);
 
       // load advisory history (first page)
       setHistoryLoading(true);
-  try {
-    const res = await fetchAdvisories(user!.uid, 10);
-    if (Array.isArray(res)) {
-      // Only set advisories if all required fields exist
-      setAdvisories(
-        (res as Advisory[]).filter(
-          (a) =>
-            typeof a.advice === "string" &&
-            Array.isArray(a.crops) &&
-            a.createdAt !== undefined
-        )
-      );
-      setAdviceLastDoc(null);
-    } else if (res && Array.isArray((res as AdvisoryFetchResult).items)) {
-      const result = res as AdvisoryFetchResult;
-      setAdvisories(
-        result.items.filter(
-          (a: Advisory) =>
-            typeof a.advice === "string" &&
-            Array.isArray(a.crops) &&
-            a.createdAt !== undefined
-        )
-      );
-      setAdviceLastDoc(result.lastDoc ?? null);
-    } else {
-      setAdvisories([]);
-      setAdviceLastDoc(null);
-    }
-  } catch (err) {
-    console.warn("fetchAdvisories error:", err);
-  } finally {
-    setHistoryLoading(false);
-  }
+      try {
+        const res = await fetchAdvisories(user.uid, 10);
+        if (Array.isArray(res)) {
+          setAdvisories((res as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+          setAdviceLastDoc(null);
+        } else if (res && Array.isArray((res as AdvisoryFetchResult).items)) {
+          const result = res as AdvisoryFetchResult;
+          setAdvisories(result.items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+          setAdviceLastDoc(result.lastDoc ?? null);
+        } else {
+          setAdvisories([]);
+          setAdviceLastDoc(null);
+        }
+      } catch (err) {
+        console.warn("fetchAdvisories error:", err);
+      } finally {
+        setHistoryLoading(false);
+      }
 
       // get coords (use stored lat/lon if available else Nominatim)
       let lat = (data as FarmerDoc).lat;
@@ -256,125 +253,101 @@ useEffect(() => {
         }
       }
 
-      if (lat && lon) {
-  // setLoadingWeather(true); // removed unused
-        // call existing /api/weather (server side) with lat/lon
-        const wRes = await fetch("/api/weather", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lat, lon }),
-        });
-        const wJson = await wRes.json();
-        setWeather(wJson);
-  // setLoadingWeather(false); // removed unused
-
-        // call /api/advice to get the latest advisory for overview
-        setLoadingAdvice(true);
-        // Build cropStages object for API
-        const cropStages: Record<string, { stage?: string }> = {};
-        (data.crops ?? []).forEach((c: string) => {
-          cropStages[c] = { stage: data.cropStatus?.[c]?.stage ?? "unknown" };
-        });
-        // Limit advice API calls to 3 per load (per dashboard load)
-        let adviceCallCount = 0;
-        adviceCallCount++;
-        if (adviceCallCount > 3) {
-          setAdvice("Advice API call limit reached. Try again later.");
-          setLoadingAdvice(false);
-          return;
-        }
-        const adRes = await fetch("/api/advice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            crops: data.crops ?? [],
-            weather: wJson,
-            lang: data.language ?? "en",
-            cropStages,
-          }),
-        });
-        const adJson = await adRes.json();
-  // adJson may be { header, items: [{crop, advice}] } or fallback {advice} or {advisory}
-  let storedAdvice = "";
-  if (adJson && Array.isArray(adJson.items)) {
-          type AiItem = { crop: string; advice: string };
-          type AiResp = { header?: string; items: AiItem[] };
-          const resp = adJson as AiResp;
-          // build advice map keyed by crop id/name lowercase
-          const map: Record<string, string> = {};
-          resp.items.forEach((it) => {
-            const key = (it.crop || '').toLowerCase();
-            map[key] = it.advice || '';
-          });
-          setCropAdvices(map);
-          // store a friendly advice string for overview: header + numbered items
-          const joined = (resp.items || []).map((it, i) => `${i+1}. ${it.crop}\n${it.advice}`).join('\n\n');
-          const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
-          setAdvice(fullAdvice);
-          storedAdvice = fullAdvice;
-        } else {
-          const generated = adJson?.advisory ?? adJson?.advice ?? "";
-          setAdvice(generated);
-          storedAdvice = generated;
-        }
-        setLoadingAdvice(false);
-
-        // store advisory in firestore (best effort, ignore errors)
-                try {
-                  await addAdvisory(user!.uid, { advice: storedAdvice, weather: wJson, crops: data.crops ?? [] });
-                  const h = await fetchAdvisories(user!.uid, 10);
-                  if (Array.isArray(h)) {
-                    setAdvisories(
-                      (h as Advisory[]).filter(
-                        (a) =>
-                          typeof a.advice === "string" &&
-                          Array.isArray(a.crops) &&
-                          a.createdAt !== undefined
-                      )
-                    );
-                  } else if (h && Array.isArray((h as AdvisoryFetchResult).items)) {
-                    setAdvisories(
-                      (h as AdvisoryFetchResult).items.filter(
-                        (a: Advisory) =>
-                          typeof a.advice === "string" &&
-                          Array.isArray(a.crops) &&
-                          a.createdAt !== undefined
-                      )
-                    );
-                  } else {
-                    setAdvisories([]);
-                  }
-                } catch (err) {
-                  console.warn("saving advisory failed", err);
-                }
-                // After storing crop advisory, also fetch fragility advisory and persist it
-                try {
-                  const fRes = await fetch('/api/fragility', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lang: data.language ?? 'en', lga: data.lga ?? '' }),
-                  });
-                  const fJson = await fRes.json();
-                  setFragility(fJson);
-                  try {
-                    // Save as structured fragility advisory
-                    await addFragilityAdvisory(user!.uid, {
-                      header: fJson.header ?? 'Fragility advisory',
-                      sections: Array.isArray(fJson.sections) ? fJson.sections : [],
-                      weather: wJson,
-                    });
-                    const fh = await fetchFragilityAdvisories(user!.uid, 10);
-                    if (Array.isArray(fh)) {
-                      setFragilityHistory(fh as FragilityResp[]);
-                    }
-                  } catch (e) {
-                    console.warn('persisting fragility failed', e);
-                  }
-                } catch {
-                  console.warn('fragility fetch failed');
-                }
-      } else {
+      if (!lat || !lon) {
         toast.info(t("no_coords") ?? "Location coordinates not available. Please update your location in Settings.");
+      } else {
+        try {
+          const wRes = await fetch("/api/weather", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lat, lon }),
+          });
+          const wJson = await wRes.json();
+          setWeather(wJson);
+
+          const isSubscribed = accessCodeUsed || (paidAccess && npDate && npDate > new Date());
+          setLoadingAdvice(true);
+          if (!isSubscribed) {
+            setAdvice(t("subscription_required") ?? "Your subscription has expired. Please renew to receive advisories.");
+            setLoadingAdvice(false);
+          } else {
+            // Build cropStages object for API
+            const cropStages: Record<string, { stage?: string }> = {};
+            (data.crops ?? []).forEach((c: string) => {
+              cropStages[c] = { stage: data.cropStatus?.[c]?.stage ?? "unknown" };
+            });
+
+            try {
+              const adRes = await fetch("/api/advice", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ crops: data.crops ?? [], weather: wJson, lang: data.language ?? "en", cropStages }),
+              });
+              const adJson = await adRes.json();
+              let storedAdvice = "";
+              if (adJson && Array.isArray(adJson.items)) {
+                type AiItem = { crop: string; advice: string };
+                type AiResp = { header?: string; items: AiItem[] };
+                const resp = adJson as AiResp;
+                const map: Record<string, string> = {};
+                resp.items.forEach((it) => {
+                  const key = (it.crop || "").toLowerCase();
+                  map[key] = it.advice || "";
+                });
+                setCropAdvices(map);
+                const joined = (resp.items || []).map((it, i) => `${i + 1}. ${it.crop}\n${it.advice}`).join("\n\n");
+                const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
+                setAdvice(fullAdvice);
+                storedAdvice = fullAdvice;
+              } else {
+                const generated = adJson?.advisory ?? adJson?.advice ?? "";
+                setAdvice(generated);
+                storedAdvice = generated;
+              }
+              setLoadingAdvice(false);
+
+              // store advisory in firestore (best effort, ignore errors)
+              try {
+                await addAdvisory(user.uid, { advice: storedAdvice, weather: wJson, crops: data.crops ?? [] });
+                const h = await fetchAdvisories(user.uid, 10);
+                if (Array.isArray(h)) {
+                  setAdvisories((h as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                } else if (h && Array.isArray((h as AdvisoryFetchResult).items)) {
+                  setAdvisories((h as AdvisoryFetchResult).items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                } else {
+                  setAdvisories([]);
+                }
+              } catch (err) {
+                console.warn("saving advisory failed", err);
+              }
+            } catch (err) {
+              console.warn("advice fetch failed", err);
+              setLoadingAdvice(false);
+            }
+          }
+
+          // fragility advisory (best-effort)
+          try {
+            const fRes = await fetch("/api/fragility", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ lang: data.language ?? "en", lga: data.lga ?? "" }),
+            });
+            const fJson = await fRes.json();
+            setFragility(fJson);
+            try {
+              await addFragilityAdvisory(user.uid, { header: fJson.header ?? "Fragility advisory", sections: Array.isArray(fJson.sections) ? fJson.sections : [], weather: wJson });
+              const fh = await fetchFragilityAdvisories(user.uid, 10);
+              if (Array.isArray(fh)) setFragilityHistory(fh as FragilityResp[]);
+            } catch (e) {
+              console.warn("persisting fragility failed", e);
+            }
+          } catch (e) {
+            console.warn("fragility fetch failed", e);
+          }
+        } catch (err) {
+          console.warn("weather/advice flow failed", err);
+        }
       }
     } catch (err) {
       console.error("Dashboard load error:", err);
@@ -384,11 +357,54 @@ useEffect(() => {
     }
   };
 
-  if (user && !authLoading) {
-    loadDashboard();
-  }
+  if (user && !authLoading) loadDashboard();
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [user, authLoading]);
+
+// live timer refresh every 30s to cause re-render of remaining time
+useEffect(() => {
+  const id = setInterval(() => {
+    setSubscriptionActive((prev) => {
+      if (!nextPaymentDate) return prev;
+      const now = new Date();
+      const f = farm as unknown as { accessCodeUsed?: boolean; paidAccess?: boolean } | null;
+      return Boolean((f && f.accessCodeUsed === true) || ((f && f.paidAccess === true) && nextPaymentDate > now));
+    });
+  }, 30_000);
+  return () => clearInterval(id);
+}, [nextPaymentDate, farm]);
+
+// helper: refresh farmer subscription fields after actions like renewal
+async function refreshFarmerDoc() {
+  try {
+    if (!user) return;
+    const ref = doc(db, "farmers", user.uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const data = snap.data() as FarmerDoc;
+    setFarm(data);
+
+    const snapData = snap.data() as Record<string, unknown>;
+    const plan = (snapData?.plan as string) ?? null;
+    const accessCodeUsed = Boolean(snapData?.accessCodeUsed === true);
+    const paidAccess = Boolean(snapData?.paidAccess === true);
+    const npRaw = snapData?.nextPaymentDate ?? snapData?.paymentDate ?? null;
+    let npDate: Date | null = null;
+    if (npRaw) {
+      if (typeof npRaw === "string" || typeof npRaw === "number") npDate = new Date(npRaw as string | number);
+      else if (typeof npRaw === "object" && npRaw !== null) {
+        const ts = npRaw as { seconds?: number; nanoseconds?: number };
+        if (typeof ts.seconds === 'number') npDate = new Date(ts.seconds * 1000);
+      }
+    }
+    setNextPaymentDate(npDate);
+    setPlanLabel(plan ?? null);
+    const now = new Date();
+    setSubscriptionActive(Boolean(accessCodeUsed || (paidAccess && npDate && npDate > now)));
+  } catch (err) {
+    console.warn('refreshFarmerDoc failed', err);
+  }
+}
 
 // Listen for language changes and refresh fragility
 useEffect(() => {
@@ -401,7 +417,7 @@ useEffect(() => {
           body: JSON.stringify({ lang: farm.language, lga: farm.lga ?? '' })
         });
         const fJson = await fRes.json();
-        setFragility(fJson);
+          setFragility(fJson);
         if (user) {
           await addFragilityAdvisory(user.uid, {
             header: fJson.header ?? 'Fragility advisory',
@@ -680,6 +696,21 @@ useEffect(() => {
     setDetailModalOpen(true);
   }
 
+  // helper: format remaining time until nextPaymentDate
+  function formatRemainingTime(d: Date | null) {
+    if (!d) return "";
+    const now = new Date();
+    const diff = d.getTime() - now.getTime();
+    if (diff <= 0) return "Expired";
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+    const mins = Math.floor((diff / (1000 * 60)) % 60);
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
+  }
+
+
   return (
   <>
   <div className="min-h-screen relative overflow-hidden">
@@ -733,44 +764,58 @@ useEffect(() => {
                   <button onClick={() => router.push("/check-weather")} className="flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg">
                     <Cloud className="w-4 h-4" /> {t("checkWeather")}
                   </button>
+                  {/* Subscription display */}
+                  <div className="ml-2 text-sm">
+                    {subscriptionActive ? (
+                      <div className="flex items-center gap-3 bg-white px-3 py-1 rounded border">
+                        <div className="text-xs text-gray-500">{planLabel ? planLabel.toUpperCase() : 'PLAN'}</div>
+                        <div className={`text-sm font-semibold ${nextPaymentDate && ((nextPaymentDate.getTime() - Date.now()) < 3 * 24 * 60 * 60 * 1000) ? 'text-red-600' : 'text-green-700'}`}>{nextPaymentDate ? formatRemainingTime(nextPaymentDate) : 'Active'}</div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs text-red-600">{t('subscription_expired') ?? 'Subscription expired'}</div>
+                        <button onClick={() => setRenewalOpen(true)} className="px-3 py-1 bg-green-600 text-white rounded text-sm">{t('renew')} </button>
+                      </div>
+                    )}
+                  </div>
             </div>
           </div>
 
           {/* tabs */}
-          <nav className="mt-4 flex items-center gap-2 overflow-x-auto scrollbar-hide whitespace-nowrap px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <nav className="mt-4 flex items-center gap-2 overflow-x-auto no-scrollbar px-1 pb-2" style={{ WebkitOverflowScrolling: 'touch' }}>
             <button
               onClick={() => setActiveTab("overview")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "overview" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "overview" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("overview_tab")}
             </button>
             <button
               onClick={() => setActiveTab("history")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("history_tab")}
             </button>
             <button
               onClick={() => setActiveTab("crops")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "crops" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "crops" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("crops_tab")}
             </button>
             <button
               onClick={() => setActiveTab("settings")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "settings" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "settings" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("settings_tab")}
             </button>
             <button
               onClick={() => setActiveTab("fragility")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "fragility" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "fragility" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("fragility_tab")}
             </button>
             <button
               onClick={() => setActiveTab("fragility_history")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "fragility_history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "fragility_history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("fragility_history_tab")}
             </button>
@@ -1305,6 +1350,16 @@ useEffect(() => {
             }
           : null
       }
+    />
+    <RenewalModal
+      open={renewalOpen}
+      onClose={() => setRenewalOpen(false)}
+      currentPlan={planLabel}
+      email={farm?.email ?? null}
+      onRenewed={async () => {
+        // refresh subscription info and advice availability
+        await refreshFarmerDoc();
+      }}
     />
     </>
   );
