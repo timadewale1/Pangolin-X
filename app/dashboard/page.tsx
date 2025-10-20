@@ -32,6 +32,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 // ...existing code...
 // ...existing code...
 import LanguageButton from "@/components/LanguageButton";
+import FragilityDetailModal from "@/components/FragilityDetailModal";
 import { useLanguage } from "@/context/LanguageContext";
 // image is served from /Pangolin-x.jpg in the public folder; reference it directly in <Image src="/Pangolin-x.jpg" ... />
 // ...existing code...
@@ -103,11 +104,7 @@ export default function DashboardPage() {
   };
 
   type FragilitySection = { title: string; summary: string; severity: "low" | "moderate" | "high" };
-  type FragilityResp = {
-  header?: string;
-  sections?: FragilitySection[];
-  createdAt?: string | Date | { seconds: number; nanoseconds: number };
-};
+  type FragilityResp = { header?: string; sections?: FragilitySection[] };
 
   // Vanta.js instance type
   type VantaInstance = { destroy: () => void } | null;
@@ -115,8 +112,6 @@ export default function DashboardPage() {
   const [advisories, setAdvisories] = useState<Advisory[]>([]);
   const [fragility, setFragility] = useState<FragilityResp | null>(null);
   const [fragilityHistory, setFragilityHistory] = useState<FragilityResp[]>([]);
-  const [selectedFragility, setSelectedFragility] = useState<FragilityResp | null>(null);
-const [fragilityDetailOpen, setFragilityDetailOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [adviceLastDoc, setAdviceLastDoc] = useState<unknown>(null); // Firestore doc snapshot
   const [activeTab, setActiveTab] = useState<"overview" | "history" | "crops" | "settings" | "fragility" | "fragility_history">("overview");
@@ -136,6 +131,8 @@ const [fragilityDetailOpen, setFragilityDetailOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [advisoryDetailOpen, setAdvisoryDetailOpen] = useState(false);
   const [selectedAdvisory, setSelectedAdvisory] = useState<Advisory | null>(null);
+  const [fragilityDetailOpen, setFragilityDetailOpen] = useState(false);
+  const [selectedFragility, setSelectedFragility] = useState<(FragilityResp & { createdAt?: unknown; id?: string }) | null>(null);
 
 
   // Vanta init (safe)
@@ -740,44 +737,43 @@ useEffect(() => {
           </div>
 
           {/* tabs */}
-          <nav className="mt-4 flex items-center justify-center gap-2">
+          <nav className="mt-4 flex items-center gap-2 overflow-x-auto scrollbar-hide whitespace-nowrap px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
             <button
               onClick={() => setActiveTab("overview")}
-              className={`px-4 py-2 rounded-full ${activeTab === "overview" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "overview" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("overview_tab")}
             </button>
             <button
               onClick={() => setActiveTab("history")}
-              className={`px-4 py-2 rounded-full ${activeTab === "history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("history_tab")}
             </button>
             <button
-              onClick={() => setActiveTab("fragility")}
-              className={`px-4 py-2 rounded-full ${activeTab === "fragility" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("fragility_tab")}
-            </button>
-            <button
-              onClick={() => setActiveTab("fragility_history")}
-              className={`px-4 py-2 rounded-full ${activeTab === "fragility_history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("fragility_history_tab")}
-            </button>
-            <button
               onClick={() => setActiveTab("crops")}
-              className={`px-4 py-2 rounded-full ${activeTab === "crops" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "crops" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("crops_tab")}
             </button>
             <button
               onClick={() => setActiveTab("settings")}
-              className={`px-4 py-2 rounded-full ${activeTab === "settings" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "settings" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
             >
               {t("settings_tab")}
             </button>
-            
+            <button
+              onClick={() => setActiveTab("fragility")}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "fragility" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+            >
+              {t("fragility_tab")}
+            </button>
+            <button
+              onClick={() => setActiveTab("fragility_history")}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 ${activeTab === "fragility_history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+            >
+              {t("fragility_history_tab")}
+            </button>
           </nav>
         </div>
       </header>
@@ -949,91 +945,96 @@ useEffect(() => {
 
         {/* Fragility History */}
         {activeTab === "fragility_history" && (
-  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-    <div className="bg-white/90 p-4 rounded-2xl shadow space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-green-800">{t("fragility_history_tab")}</h3>
-        <div className="text-sm text-gray-600">{fragilityHistory.length} {t("items")}</div>
-      </div>
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="bg-white/90 p-4 rounded-2xl shadow space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-green-800">{t("fragility_history_tab")}</h3>
+                <div className="text-sm text-gray-600">{fragilityHistory.length} {t("items")}</div>
+              </div>
+              {historyLoading ? <Loader /> : (
+                (() => {
+                  if (fragilityHistory.length === 0) return <div className="text-gray-500">{t("no_fragility_history")}</div>;
+                  // Group fragilityHistory by date. Each fragilityHistory item may not have createdAt; try to use index as fallback
+                  const grouped: { [date: string]: (FragilityResp & { createdAt?: unknown; id?: string })[] } = {};
+                  function toDate(input: unknown): Date {
+                    if (!input) return new Date(0);
+                    if (typeof input === 'string' || typeof input === 'number') return new Date(input as string | number);
+                    const asObj = input as { toDate?: () => Date; seconds?: number; nanoseconds?: number };
+                    if (typeof asObj.toDate === 'function') {
+                      try { return asObj.toDate(); } catch { }
+                    }
+                    if (typeof asObj.seconds === 'number') {
+                      const seconds = asObj.seconds as number;
+                      const nanos = typeof asObj.nanoseconds === 'number' ? asObj.nanoseconds as number : 0;
+                      return new Date(seconds * 1000 + Math.round(nanos / 1e6));
+                    }
+                    try {
+                      const s = JSON.stringify(input);
+                      const parsed = JSON.parse(s);
+                      if (typeof parsed === 'string' || typeof parsed === 'number') return new Date(parsed as string | number);
+                    } catch {}
+                    return new Date(0);
+                  }
 
-      {historyLoading ? (
-        <div className="py-6"><Loader /></div>
-      ) : (
-        <div className="space-y-6">
-          {fragilityHistory.length === 0 ? (
-            <div className="text-gray-600">{t("no_fragility_history")}</div>
-          ) : (
-            (() => {
-              // Group by date
-              const grouped: { [date: string]: FragilityResp[] } = {};
-              fragilityHistory.forEach(f => {
-                if (!f.createdAt) return; // Skip items with no createdAt
-                const d = new Date(
-                  typeof f.createdAt === "object" && "seconds" in f.createdAt
-                    ? f.createdAt.seconds * 1000
-                    : f.createdAt
-                );
-                const key = d.toISOString().slice(0, 10);
-                if (!grouped[key]) grouped[key] = [];
-                grouped[key].push(f);
-              });
+                  fragilityHistory.forEach((f, idx) => {
+                    // support when stored as object with createdAt property or use now as fallback
+                    const created = (f as unknown as { createdAt?: unknown }).createdAt ?? new Date().toISOString();
+                    const d = created ? toDate(created) : new Date();
+                    const key = d.toISOString().slice(0,10);
+                    if (!grouped[key]) grouped[key] = [];
+                    grouped[key].push({ ...(f as FragilityResp), createdAt: created, id: `${idx}` });
+                  });
 
-              return Object.entries(grouped).map(([date, items]) => (
-                <div key={date}>
-                  <div className="text-sm font-semibold text-green-700 mb-2">{new Date(date).toLocaleDateString()}</div>
-                  <div className="grid gap-3">
-                    {items.map((f, idx) => {
-                      let displayTime = "-";
-                      if (f.createdAt) {
-                        if (typeof f.createdAt === "string" && !f.createdAt.startsWith("Timestamp")) {
-                          displayTime = new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        } else if (typeof f.createdAt === "object") {
-                          if ("seconds" in f.createdAt) {
-                            const d = new Date(f.createdAt.seconds * 1000);
-                            displayTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                          } else {
-                            try {
-                              displayTime = new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                            } catch {
-                              displayTime = "-";
-                            }
-                          }
-                        } else {
-                          try {
-                            displayTime = new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                          } catch {
-                            displayTime = "-";
-                          }
-                        }
-                      }
+                  return (
+                    <div className="space-y-6">
+                      {Object.entries(grouped).map(([date, items]) => (
+                        <div key={date}>
+                          <div className="text-sm font-semibold text-green-700 mb-2">{new Date(date).toLocaleDateString()}</div>
+                          <div className="grid gap-3">
+                            {items.map((f, idx) => {
+                              // display time
+                              let displayTime = "";
+                              if (f.createdAt) {
+                                if (typeof f.createdAt === 'string' && !f.createdAt.startsWith('Timestamp')) {
+                                  displayTime = new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                } else if (typeof f.createdAt === 'object') {
+                                  const asObj = f.createdAt as { seconds?: number };
+                                  if (asObj && typeof asObj.seconds === 'number') {
+                                    const d = new Date(asObj.seconds * 1000);
+                                    displayTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                  } else {
+                                    try { displayTime = new Date(String(f.createdAt)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { displayTime = '-'; }
+                                  }
+                                } else {
+                                  try { displayTime = new Date(String(f.createdAt)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { displayTime = '-'; }
+                                }
+                              }
 
-                      return (
-                        <motion.div
-                          key={idx}
-                          initial={{ opacity: 0, y: 4 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="p-3 rounded-lg bg-white shadow-sm cursor-pointer hover:bg-green-50 flex items-center gap-4"
-                          onClick={() => { setSelectedFragility(f); setFragilityDetailOpen(true); }}
-                        >
-                          <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-white font-bold text-lg">
-                            {idx + 1}
+                              return (
+                                <motion.div
+                                  key={f.id}
+                                  initial={{ opacity: 0, y: 4 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="p-3 rounded-lg bg-white shadow-sm cursor-pointer hover:bg-green-50 flex items-center gap-4"
+                                  onClick={() => { setSelectedFragility(f); setFragilityDetailOpen(true); }}
+                                >
+                                  <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-white font-bold text-lg">{idx + 1}</div>
+                                  <div className="flex-1">
+                                    <div className="font-semibold text-green-800">Fragility advice given at {displayTime}</div>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
                           </div>
-                          <div className="flex-1">
-                            <div className="font-semibold text-green-800">Fragility Advisory Given at {displayTime}</div>
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ));
-            })()
-          )}
-        </div>
-      )}
-    </div>
-  </motion.div>
-)}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* History */}
         {activeTab === "history" && (
@@ -1253,7 +1254,7 @@ useEffect(() => {
 
     </div>
     {/* Modals - only render once, outside dashboard container */}
-    <CropEditorModal open={cropModalOpen} onClose={() => setCropModalOpen(false)} currentCrops={farm?.crops ?? []} onSave={handleSaveCrops} />
+  <CropEditorModal open={cropModalOpen} onClose={() => setCropModalOpen(false)} currentCrops={farm?.crops ?? []} onSave={handleSaveCrops} />
     <CropDetailModal
       open={detailModalOpen}
       onClose={() => setDetailModalOpen(false)}
@@ -1282,6 +1283,29 @@ useEffect(() => {
       onSaved={onStageModalSaved}
     />
     <LanguageModal openProp={langModalOpen} onClose={() => setLangModalOpen(false)} />
+    <FragilityDetailModal
+      open={fragilityDetailOpen}
+      onClose={() => setFragilityDetailOpen(false)}
+      fragility={
+        selectedFragility
+          ? {
+              header: selectedFragility.header,
+              sections: selectedFragility.sections,
+              createdAt:
+                // If createdAt is a Firestore-like object with seconds, keep that shape
+                (typeof selectedFragility.createdAt === "object" &&
+                  selectedFragility.createdAt !== null &&
+                  "seconds" in (selectedFragility.createdAt as Record<string, unknown>))
+                  ? (selectedFragility.createdAt as { seconds?: number })
+                  // If it's already a string or Date, pass through
+                  : typeof selectedFragility.createdAt === "string" || selectedFragility.createdAt instanceof Date
+                  ? selectedFragility.createdAt
+                  // otherwise undefined
+                  : undefined,
+            }
+          : null
+      }
+    />
     </>
   );
 }

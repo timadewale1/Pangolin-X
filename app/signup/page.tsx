@@ -210,21 +210,27 @@ export default function SignupPage() {
 
       // If no valid access code, initiate payment
       if (!accessCodeValid) {
+        if (!formState.email || !formState.email.includes('@')) {
+          toast.error('Please enter a valid email before payment');
+          setLocalLoading(false);
+          return;
+        }
         const payRes = await fetch('/api/paystack', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: formState.email })
         });
         const payData = await payRes.json();
-        
-        if (payData.status && payData.data?.authorization_url) {
+        if (payRes.ok && payData.status && payData.data?.authorization_url) {
           // Store form data in localStorage for retrieval after payment
           localStorage.setItem('pangolin-signup-data', JSON.stringify(formState));
           // Redirect to payment page
           window.location.href = payData.data.authorization_url;
           return;
         } else {
-          throw new Error('Payment initialization failed');
+          const errorMsg = payData?.message || payData?.error || 'Payment initialization failed';
+          toast.error(errorMsg);
+          throw new Error(errorMsg);
         }
       }
 
@@ -281,14 +287,14 @@ export default function SignupPage() {
 
             <label className="text-sm">Access Code (Optional)</label>
             <input 
-              type="text" 
-              className="w-full border p-2 rounded mt-1 mb-3" 
-              value={accessCode} 
+              type="text"
+              className="w-full border p-2 rounded mt-1 mb-3"
+              value={accessCode}
               onChange={async (e) => {
                 const code = e.target.value.toUpperCase();
                 setAccessCode(code);
-                // Validate code if length matches
-                if (code.length === 10) {
+                // Validate code if length matches expected (match server, e.g. 11 for PANGOLIN-X)
+                if (code.length === 11) {
                   try {
                     const res = await fetch('/api/access-code', {
                       method: 'POST',
@@ -304,7 +310,7 @@ export default function SignupPage() {
                     }
                   } catch (err) {
                     console.error('Access code validation failed:', err);
-                    toast.error('Failed to validate access code');
+                    toast.error('Server error validating access code');
                   }
                 } else {
                   setAccessCodeValid(false);
