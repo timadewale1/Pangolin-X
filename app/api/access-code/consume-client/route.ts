@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server';
 import admin from 'firebase-admin';
-import { readFileSync } from 'fs';
-import path from 'path';
 
 if (!admin.apps.length) {
   try {
-    const keyPath = path.join(process.cwd(), 'serviceAccountKey.json');
-    const keyRaw = readFileSync(keyPath, 'utf8');
+    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
+    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
     const serviceAccount = JSON.parse(keyRaw);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),

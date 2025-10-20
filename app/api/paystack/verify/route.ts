@@ -1,14 +1,13 @@
+
 import { NextResponse } from "next/server";
 import admin from "firebase-admin";
-import { readFileSync } from "fs";
-import path from "path";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
 if (!admin.apps.length) {
   try {
-    const keyPath = path.join(process.cwd(), "serviceAccountKey.json");
-    const keyRaw = readFileSync(keyPath, "utf8");
+    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
+    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
     const serviceAccount = JSON.parse(keyRaw);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
@@ -17,6 +16,7 @@ if (!admin.apps.length) {
     console.error("Failed to init firebase-admin (paystack verify):", err);
   }
 }
+
 
 const db = admin.firestore();
 
@@ -125,8 +125,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ success: true, data, farmerUid, prorateDiscount, finalCharge });
-    } catch (err) {
-      console.error('Paystack verification error:', err);
-      return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
-    }
+  } catch (err) {
+    console.error('Paystack verification error:', err);
+    return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
   }
+}
