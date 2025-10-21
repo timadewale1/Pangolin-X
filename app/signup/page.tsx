@@ -338,8 +338,13 @@ export default function SignupPage() {
         }
 
         // Open paystack inline modal
-        const reference = payData.data.reference || payData.data.access_code || String(Date.now());
-        const amount = payData.data.amount ?? 2000 * 100;
+          const reference = payData.data.reference || payData.data.access_code || String(Date.now());
+          const amount = payData.data.amount;
+          if (!amount || typeof amount !== 'number' || amount <= 0) {
+            toast.error('Invalid package price. Please select a valid plan.');
+            setLocalLoading(false);
+            return;
+          }
         const paystackGlobal = (window as PaystackWindow).PaystackPop;
         if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
           toast.error('Paystack inline not available');

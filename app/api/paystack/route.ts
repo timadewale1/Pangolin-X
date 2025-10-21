@@ -7,7 +7,6 @@ const PACKAGE_AMOUNTS: Record<string, number> = {
   monthly: 1500 * 100,
   yearly: 15000 * 100,
 };
-const DEFAULT_AMOUNT = 2000 * 100; // fallback
 
 export async function POST(req: Request) {
   try {
@@ -31,7 +30,10 @@ export async function POST(req: Request) {
     const headersList = await headers();
     const origin = process.env.NEXT_PUBLIC_APP_URL || headersList.get("origin") || "http://localhost:3000";
 
-    const amount = PACKAGE_AMOUNTS[pkg] ?? DEFAULT_AMOUNT;
+    const amount = PACKAGE_AMOUNTS[pkg];
+    if (!amount) {
+      return NextResponse.json({ error: "Invalid or missing package. Please select a valid plan." }, { status: 400 });
+    }
 
     // Initialize transaction with Paystack
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
