@@ -178,35 +178,36 @@ export default function RenewalModal({
             try {
               setVerifying(true);
               setLoading(false);
-              // Use relative path to ensure correct routing
-              const vr = await fetch("https://www.pangolin-x.com/api/paystack/verify", {
-                method: "POST",
-                headers: { 
-                  "Content-Type": "application/json",
-                  "Accept": "application/json",
-                  "Origin": "https://www.pangolin-x.com"
+              console.log('Renewal: verifying payment with reference:', response.reference);
+              const vr = await fetch('/api/paystack/verify', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
                 },
-                credentials: "include",
-                body: JSON.stringify({ 
-                  reference: response.reference,
-                  source: 'renewal'
-                }),
+                credentials: 'include',
+                body: JSON.stringify({ reference: response.reference, source: 'renewal' }),
               }).catch(err => {
-                console.error("Verify request failed:", err);
-                throw new Error("Payment verification request failed");
+                console.error('Verify request failed:', err);
+                throw new Error('Payment verification request failed');
               });
-              
+
               if (!vr.ok) {
                 const errText = await vr.text();
-                console.error("Verify response not ok:", vr.status, errText);
+                console.error('Verify response not ok:', vr.status, errText);
+                if (vr.status === 405) {
+                  toast.error('Payment verification endpoint not allowed (405). Please contact support.');
+                  setVerifying(false);
+                  return;
+                }
                 throw new Error(`Payment verification failed: ${vr.status}`);
               }
 
               const vdata = await vr.json().catch(err => {
-                console.error("Verify JSON parse failed:", err);
-                throw new Error("Invalid verification response");
+                console.error('Verify JSON parse failed:', err);
+                throw new Error('Invalid verification response');
               });
-              
+
               if (vr.ok && vdata.success) {
                 const amountN = (vdata?.data?.amount ?? amount) as number;
                 const refOut = (
@@ -222,15 +223,15 @@ export default function RenewalModal({
                   discount,
                   finalCharge,
                 });
-                toast.success("Payment complete — subscription renewed");
+                toast.success('Payment complete — subscription renewed');
                 if (onRenewed) onRenewed();
               } else {
-                toast.error("Payment verification failed");
-                console.error("verify failed", vdata);
+                toast.error('Payment verification failed');
+                console.error('verify failed', vdata);
               }
             } catch (err: unknown) {
-              console.error("verify error", err);
-              toast.error("Payment verification error");
+              console.error('verify error', err);
+              toast.error('Payment verification error');
             } finally {
               setVerifying(false);
             }

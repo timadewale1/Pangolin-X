@@ -19,17 +19,29 @@ export default function VerifyPaymentPageInner() {
           setVerifying(false);
           return;
         }
-
-        const res = await fetch("https://www.pangolin-x.com/api/paystack/verify", {
+        console.log('Signup verify: verifying payment with reference:', reference);
+        const res = await fetch('/api/paystack/verify', {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Origin': 'https://www.pangolin-x.com'
+            'Accept': 'application/json'
           },
           credentials: 'include',
           body: JSON.stringify({ reference }),
         });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error('Verify response not ok:', res.status, errText);
+          if (res.status === 405) {
+            setError('Payment verification endpoint not allowed (405). Please contact support.');
+            setVerifying(false);
+            return;
+          }
+          setError('Payment verification failed');
+          setVerifying(false);
+          return;
+        }
 
         const data = await res.json();
 
