@@ -6,14 +6,17 @@ if (!admin.apps.length) {
     const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
     if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
     const serviceAccount = JSON.parse(keyRaw);
+
+    // 👇 Convert escaped newlines back to real ones
+    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
+      credential: admin.credential.cert(serviceAccount),
     });
   } catch (err) {
     console.error('Failed to init firebase-admin (consume-client):', err);
   }
 }
-
 const db = admin.firestore();
 const VALID_CODE = 'PANGOLIN-X';
 
