@@ -118,7 +118,7 @@ export default function RenewalModal({ open, onClose, currentPlan = null, email 
           setLoading(false);
           if (!verifying) toast.info('Payment window closed');
         },
-        callback: async function(response: { reference?: string }) {
+        callback: typeof window !== 'undefined' ? async function(response: { reference?: string }) {
           try {
             setVerifying(true);
             setLoading(false);
@@ -146,7 +146,7 @@ export default function RenewalModal({ open, onClose, currentPlan = null, email 
           } finally {
             setVerifying(false);
           }
-        }
+        } : function() {} // fallback to empty function if window is undefined
       });
       if (!handler || typeof handler.openIframe !== 'function') {
         toast.error('Paystack handler setup failed');

@@ -349,7 +349,7 @@ export default function SignupPage() {
           onClose: function() {
             toast.info('Payment window closed');
           },
-          callback: async function(response: { reference?: string }) {
+          callback: typeof window !== 'undefined' ? async function(response: { reference?: string }) {
             // Verify server-side
             try {
               const vr = await fetch('/api/paystack/verify', {
@@ -375,7 +375,6 @@ export default function SignupPage() {
                     createdAt: new Date().toISOString(),
                     paidAccess: true,
                     paymentDate: new Date().toISOString(),
-                    // store plan so dashboard can show subscription info; server verify will also update/overwrite when available
                     plan: selectedPackage ?? null,
                     accessCodeUsed: false,
                   });
@@ -393,7 +392,7 @@ export default function SignupPage() {
               console.error('Payment verification error:', err);
               toast.error('Payment verification error');
             }
-          }
+          } : function() {} // fallback to empty function if window is undefined
         });
         if (!handler || typeof handler.openIframe !== 'function') {
           toast.error('Paystack handler setup failed');
