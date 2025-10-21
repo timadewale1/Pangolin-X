@@ -1,9 +1,49 @@
 
 import { NextResponse } from "next/server";
+import { headers } from 'next/headers';
 import admin from "firebase-admin";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
+// CORS configuration
+const ALLOWED_ORIGINS = [
+  'https://www.pangolin-x.com',
+  'http://localhost:3000'
+];
+
+// Type definitions
+type PlanType = 'monthly' | 'yearly';
+
+interface FarmerData {
+  plan?: PlanType;
+  nextPaymentDate?: string;
+  paidAccess?: boolean;
+  paymentReference?: string;
+  paymentDate?: string;
+}
+
+interface PaystackVerifyResponse {
+  status: boolean;
+  message: string;
+  data: {
+    status: string;
+    reference: string;
+    amount: number;
+    customer: {
+      email: string;
+    };
+    metadata: {
+      plan?: PlanType;
+    };
+  };
+}
+
+const planPrices: Record<PlanType, number> = {
+  monthly: 1500,
+  yearly: 15000
+};
+
+// Initialize Firebase Admin
 if (!admin.apps.length) {
   try {
     const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
@@ -17,116 +57,216 @@ if (!admin.apps.length) {
   }
 }
 
-
 const db = admin.firestore();
+
+// Helper: Create response with CORS headers
+function createResponse(
+  data: Record<string, unknown>, 
+  status: number, 
+  origin?: string | null
+): NextResponse {
+  const response = new NextResponse(
+    JSON.stringify(data),
+    { 
+      status,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.set('Access-Control-Allow-Credentials', 'true');
+    response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Accept, Origin');
+  }
+
+  return response;
+}
+
+// Handle CORS preflight
+export async function OPTIONS() {
+  const headersList = await headers();
+  const origin = headersList.get('origin');
+
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Accept, Origin',
+        'Access-Control-Allow-Credentials': 'true',
+      },
+    });
+  }
+
+  return new NextResponse(null, { status: 204 });
+}
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    // Validate origin
+    const headersList = await headers();
+    const origin = headersList.get('origin');
+    
+    if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+      return createResponse(
+        { success: false, message: 'Origin not allowed' },
+        403,
+        origin
+      );
+    }
+
+    // Parse request body
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return createResponse(
+        { success: false, message: 'Invalid JSON body' },
+        400,
+        origin
+      );
+    }
+
+    // Validate reference
     const { reference } = body;
-    if (!reference) return NextResponse.json({ success: false, message: 'reference required' }, { status: 400 });
+    if (!reference) {
+      return createResponse(
+        { success: false, message: 'Reference required' },
+        400,
+        origin
+      );
+    }
 
     // Verify with Paystack
-    const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` }
-    });
-    if (!response.ok) {
-      const errBody = await response.text();
-      console.error('Paystack verify returned non-ok:', errBody);
-      return NextResponse.json({ success: false, message: 'Payment provider verification failed' }, { status: 502 });
-    }
-    const data = await response.json();
-
-    // ensure success
-    const status = data?.data?.status;
-    if (status !== 'success') {
-      return NextResponse.json({ success: false, message: 'Payment not successful', data }, { status: 400 });
-    }
-
-    const email = data?.data?.customer?.email;
-    const plan = data?.data?.metadata?.plan ?? null;
-    const paidAt = new Date().toISOString();
-    const referenceId = data?.data?.reference ?? reference;
-
-    let farmerUid: string | null = null;
-    try {
-      if (email) {
-        const users = await admin.auth().getUsers([{ email }]);
-        const userRecord = users.users && users.users[0];
-        if (userRecord) farmerUid = userRecord.uid;
-      } else {
-        console.warn('No email found in payment data');
-      }
-    } catch (e) {
-      console.warn('Failed to lookup auth user by email:', e);
-    }
-
-    let nextPaymentDate: string | null = null;
-    if (plan === 'monthly') {
-      const d = new Date(paidAt);
-      d.setMonth(d.getMonth() + 1);
-      nextPaymentDate = d.toISOString();
-    } else if (plan === 'yearly') {
-      const d = new Date(paidAt);
-      d.setFullYear(d.getFullYear() + 1);
-      nextPaymentDate = d.toISOString();
-    }
-
-    // Pro-rate billing calculation
-    let prorateDiscount = 0;
-    let finalCharge = data?.data?.amount ?? 0;
-    if (farmerUid) {
-      const fRef = db.collection('farmers').doc(farmerUid);
-      const snap = await fRef.get();
-      if (snap.exists) {
-        const farmer = snap.data() as { plan?: 'monthly'|'yearly'; nextPaymentDate?: string };
-        const currentPlan = farmer.plan;
-        const currentExpiry = farmer.nextPaymentDate ? new Date(farmer.nextPaymentDate) : null;
-        if (currentPlan && currentExpiry && currentPlan !== plan) {
-          // Only pro-rate if switching plans before expiry
-          const now = new Date(paidAt);
-          if (currentExpiry > now) {
-            // Calculate unused days
-            const msLeft = currentExpiry.getTime() - now.getTime();
-            const daysLeft = Math.max(0, Math.floor(msLeft / (1000 * 60 * 60 * 24)));
-            const planPrices: { monthly: number; yearly: number } = { monthly: 1500, yearly: 15000 };
-            const totalDays = currentPlan === 'yearly' ? 365 : 30;
-            const unusedValue = Math.round((daysLeft / totalDays) * planPrices[currentPlan]);
-            prorateDiscount = unusedValue * 100; // convert to kobo
-            finalCharge = Math.max(0, finalCharge - prorateDiscount);
-          }
+    const paystackResponse = await fetch(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json'
         }
       }
+    );
+
+    if (!paystackResponse.ok) {
+      const errText = await paystackResponse.text();
+      console.error('Paystack verification failed:', errText);
+      return createResponse(
+        { success: false, message: 'Payment verification failed' },
+        502,
+        origin
+      );
     }
 
-    // Update farmer doc if found
-    if (farmerUid) {
-      const fRef = db.collection('farmers').doc(farmerUid);
-      type UpdateData = {
-        paidAccess: boolean;
-        paymentReference: string;
-        paymentDate: string;
-        plan?: string | null;
-        nextPaymentDate?: string | null;
-      };
-      const updateData: UpdateData = {
-        paidAccess: true,
-        paymentReference: referenceId,
-        paymentDate: paidAt,
-      };
-      if (plan) updateData.plan = plan;
-      if (nextPaymentDate) updateData.nextPaymentDate = nextPaymentDate;
+    const data = await paystackResponse.json() as PaystackVerifyResponse;
+    
+    // Validate payment status
+    if (data?.data?.status !== 'success') {
+      return createResponse(
+        { success: false, message: 'Payment unsuccessful', data },
+        400,
+        origin
+      );
+    }
+
+    // Extract payment details
+    const email = data?.data?.customer?.email;
+    const plan = data?.data?.metadata?.plan as PlanType | undefined;
+    const paidAt = new Date().toISOString();
+    const referenceId = data?.data?.reference ?? reference;
+    
+    // Look up farmer by email
+    let farmerUid: string | null = null;
+    if (email) {
       try {
-        await fRef.set(updateData, { merge: true });
+        const { users } = await admin.auth().getUsers([{ email }]);
+        if (users?.[0]?.uid) farmerUid = users[0].uid;
       } catch (e) {
-        console.error('Failed to update farmer doc after payment:', e);
+        console.warn('Auth lookup failed:', e);
       }
     }
 
-    return NextResponse.json({ success: true, data, farmerUid, prorateDiscount, finalCharge });
+    // Calculate next payment date
+    let nextPaymentDate: string | null = null;
+    if (plan === 'monthly' || plan === 'yearly') {
+      const d = new Date(paidAt);
+      if (plan === 'monthly') d.setMonth(d.getMonth() + 1);
+      else d.setFullYear(d.getFullYear() + 1);
+      nextPaymentDate = d.toISOString();
+    }
+
+    let prorateDiscount = 0;
+    let finalCharge = data?.data?.amount ?? 0;
+
+    // Process farmer data
+    if (farmerUid) {
+      try {
+        const docRef = db.collection('farmers').doc(farmerUid);
+        const docSnap = await docRef.get();
+
+        if (docSnap.exists) {
+          const farmerData = docSnap.data() as FarmerData;
+          
+          // Calculate pro-rate discount if applicable
+          if (
+            farmerData.plan &&
+            farmerData.nextPaymentDate &&
+            plan &&
+            farmerData.plan !== plan
+          ) {
+            const currentExpiry = new Date(farmerData.nextPaymentDate);
+            const now = new Date(paidAt);
+
+            if (!isNaN(currentExpiry.getTime()) && currentExpiry > now) {
+              const msLeft = currentExpiry.getTime() - now.getTime();
+              const daysLeft = Math.max(0, Math.floor(msLeft / (1000 * 60 * 60 * 24)));
+              const totalDays = farmerData.plan === 'yearly' ? 365 : 30;
+              const unusedValue = Math.round((daysLeft / totalDays) * planPrices[farmerData.plan]);
+              prorateDiscount = unusedValue * 100; // convert to kobo
+              finalCharge = Math.max(0, finalCharge - prorateDiscount);
+            }
+          }
+
+          // Update farmer document
+          await docRef.set({
+            paidAccess: true,
+            paymentReference: referenceId,
+            paymentDate: paidAt,
+            ...(plan && { plan }),
+            ...(nextPaymentDate && { nextPaymentDate })
+          }, { merge: true });
+        }
+      } catch (e) {
+        console.error('Farmer data processing failed:', e);
+      }
+    }
+
+    return createResponse({
+      success: true,
+      data: {
+        email,
+        plan,
+        paidAt,
+        referenceId,
+        farmerUid,
+        prorateDiscount,
+        finalCharge,
+        nextPaymentDate
+      }
+    }, 200, origin);
+
   } catch (err) {
-    console.error('Paystack verification error:', err);
-    return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
+    console.error('Payment verification error:', err);
+    return createResponse(
+      { success: false, message: 'Server error' },
+      500,
+      origin
+    );
   }
 }
+

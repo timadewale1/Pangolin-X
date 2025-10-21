@@ -178,12 +178,35 @@ export default function RenewalModal({
             try {
               setVerifying(true);
               setLoading(false);
-              const vr = await fetch("/api/paystack/verify", {
+              // Use relative path to ensure correct routing
+              const vr = await fetch("https://www.pangolin-x.com/api/paystack/verify", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ reference: response.reference }),
+                headers: { 
+                  "Content-Type": "application/json",
+                  "Accept": "application/json",
+                  "Origin": "https://www.pangolin-x.com"
+                },
+                credentials: "include",
+                body: JSON.stringify({ 
+                  reference: response.reference,
+                  source: 'renewal'
+                }),
+              }).catch(err => {
+                console.error("Verify request failed:", err);
+                throw new Error("Payment verification request failed");
               });
-              const vdata = await vr.json();
+              
+              if (!vr.ok) {
+                const errText = await vr.text();
+                console.error("Verify response not ok:", vr.status, errText);
+                throw new Error(`Payment verification failed: ${vr.status}`);
+              }
+
+              const vdata = await vr.json().catch(err => {
+                console.error("Verify JSON parse failed:", err);
+                throw new Error("Invalid verification response");
+              });
+              
               if (vr.ok && vdata.success) {
                 const amountN = (vdata?.data?.amount ?? amount) as number;
                 const refOut = (

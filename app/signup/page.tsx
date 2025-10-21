@@ -275,7 +275,11 @@ export default function SignupPage() {
         const payRes = await fetch('/api/paystack', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formState.email, pkg: selectedPackage })
+          body: JSON.stringify({ 
+            email: formState.email, 
+            pkg: selectedPackage,
+            metadata: { source: 'signup' } // Add source metadata instead of exposing full referrer
+          })
         });
         const payData = await payRes.json();
         if (!payRes.ok) {
@@ -355,9 +359,14 @@ export default function SignupPage() {
         (async () => {
           try {
             // --- VERIFY PAYMENT ON SERVER ---
-            const vr = await fetch('/api/paystack/verify', {
+            const vr = await fetch('https://www.pangolin-x.com/api/paystack/verify', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Origin': 'https://www.pangolin-x.com'
+              },
+              credentials: 'include',
               body: JSON.stringify({ reference: response.reference }),
             });
             const vdata = await vr.json();

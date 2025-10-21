@@ -20,9 +20,14 @@ export default function VerifyPaymentPageInner() {
           return;
         }
 
-        const res = await fetch("/api/paystack/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const res = await fetch("https://www.pangolin-x.com/api/paystack/verify", {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Origin': 'https://www.pangolin-x.com'
+          },
+          credentials: 'include',
           body: JSON.stringify({ reference }),
         });
 
