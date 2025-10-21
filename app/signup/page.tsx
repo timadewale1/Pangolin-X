@@ -342,64 +342,77 @@ export default function SignupPage() {
           throw new Error('Paystack inline not available');
         }
         const handler = paystackGlobal.setup({
-          key: PAYSTACK_PUBLIC_KEY as string,
-          email: formState.email,
-          amount,
-          ref: reference,
-          onClose: function() {
-            toast.info('Payment window closed');
-          },
-          callback: typeof window !== 'undefined' ? async function(response: { reference?: string }) {
-            // Verify server-side
-            try {
-              const vr = await fetch('/api/paystack/verify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reference: response.reference })
-              });
-              const vdata = await vr.json();
-              if (vr.ok && vdata.data && vdata.data.status === 'success') {
-                // proceed to create user now (payment done in-page)
-                try {
-                  const create = await createUserWithEmailAndPassword(auth, formState.email, formState.password);
-                  const uid = create.user.uid;
-                  await setDoc(doc(db, 'farmers', uid), {
-                    name: formState.name,
-                    email: formState.email,
-                    phone: formState.phone,
-                    state: formState.state,
-                    lga: formState.lga,
-                    crops: formState.crops,
-                    language: formState.language ?? 'en',
-                    title: formState.title ?? '',
-                    createdAt: new Date().toISOString(),
-                    paidAccess: true,
-                    paymentDate: new Date().toISOString(),
-                    plan: selectedPackage ?? null,
-                    accessCodeUsed: false,
-                  });
-                  toast.success('Account created. Redirecting to login...');
-                  setTimeout(() => router.push('/login'), 900);
-                } catch (e) {
-                  console.error('Failed to create user after payment:', e);
-                  toast.error('Failed to create account after payment');
-                }
-              } else {
-                toast.error('Payment verification failed');
-                console.error('Paystack verify failed', vdata);
+  key: PAYSTACK_PUBLIC_KEY as string,
+  email: formState.email,
+  amount,
+  ref: reference,
+  onClose: function () {
+    toast.info('Payment window closed');
+  },
+  callback: typeof window !== 'undefined'
+    ? function (response: { reference?: string }) {
+        // ✅ Wrap async logic in IIFE to support async fetch inside Paystack callback
+        (async () => {
+          try {
+            // --- VERIFY PAYMENT ON SERVER ---
+            const vr = await fetch('/api/paystack/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reference: response.reference }),
+            });
+            const vdata = await vr.json();
+
+            if (vr.ok && vdata.data && vdata.data.status === 'success') {
+              // ✅ Proceed to create user now (payment verified)
+              try {
+                const create = await createUserWithEmailAndPassword(
+                  auth,
+                  formState.email,
+                  formState.password
+                );
+                const uid = create.user.uid;
+
+                await setDoc(doc(db, 'farmers', uid), {
+                  name: formState.name,
+                  email: formState.email,
+                  phone: formState.phone,
+                  state: formState.state,
+                  lga: formState.lga,
+                  crops: formState.crops,
+                  language: formState.language ?? 'en',
+                  title: formState.title ?? '',
+                  createdAt: new Date().toISOString(),
+                  paidAccess: true,
+                  paymentDate: new Date().toISOString(),
+                  plan: selectedPackage ?? null,
+                  accessCodeUsed: false,
+                });
+
+                toast.success('Account created. Redirecting to login...');
+                setTimeout(() => router.push('/login'), 900);
+              } catch (e) {
+                console.error('Failed to create user after payment:', e);
+                toast.error('Failed to create account after payment');
               }
-            } catch (err) {
-              console.error('Payment verification error:', err);
-              toast.error('Payment verification error');
+            } else {
+              toast.error('Payment verification failed');
+              console.error('Paystack verify failed', vdata);
             }
-          } : function() {} // fallback to empty function if window is undefined
-        });
-        if (!handler || typeof handler.openIframe !== 'function') {
-          toast.error('Paystack handler setup failed');
-          throw new Error('Paystack handler setup failed');
-        }
-        handler.openIframe();
-        return;
+          } catch (err) {
+            console.error('Payment verification error:', err);
+            toast.error('Payment verification error');
+          }
+        })();
+      }
+    : function () {}, // fallback to empty function if window is undefined
+});
+
+if (!handler || typeof handler.openIframe !== 'function') {
+  toast.error('Paystack handler setup failed');
+  throw new Error('Paystack handler setup failed');
+}
+handler.openIframe();
+return;
       }
 
       // If we have a valid access code or coming back from successful payment, create account
