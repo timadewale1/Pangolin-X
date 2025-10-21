@@ -236,6 +236,7 @@ export default function Home() {
           <div>
             <h4 className="font-semibold mb-3">Contact Us</h4>
             <p className="text-gray-400">pangolin.xapp@gmail.com</p>
+            <p className="text-gray-400">contact@pangolin-x.com</p>
             <p className="text-gray-400">+234 806 193 5246</p>
           </div>
         </div>
