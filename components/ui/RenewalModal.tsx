@@ -75,42 +75,53 @@ export default function RenewalModal({ open, onClose, currentPlan = null, email 
       }
 
       // load inline script
+      type PaystackWindow = Window & {
+        PaystackPop?: {
+          setup: (opts: {
+            key: string;
+            email: string;
+            amount: number;
+            ref: string;
+            onClose?: () => void;
+            callback?: (response: { reference?: string }) => void | Promise<void>;
+          }) => { openIframe: () => void };
+        };
+      };
       await new Promise<void>((resolve, reject) => {
-        if ((window as unknown as { PaystackPop?: unknown }).PaystackPop) return resolve();
+        if ((window as PaystackWindow).PaystackPop) return resolve();
         const s = document.createElement('script');
         s.src = 'https://js.paystack.co/v1/inline.js';
-        s.onload = () => resolve();
+        s.onload = () => {
+          if ((window as PaystackWindow).PaystackPop) resolve();
+          else reject(new Error('PaystackPop not available after script load'));
+        };
         s.onerror = () => reject(new Error('Failed to load Paystack script'));
         document.body.appendChild(s);
       });
 
-  type Authorization = { reference?: string; access_code?: string; amount?: number; authorization_url?: string };
-  const authData = authorization as Authorization;
-  const ref = authData.reference || authData.access_code || String(Date.now());
-  const amount = typeof authData.amount === 'number' ? authData.amount : ((paystackConfig?.packages?.[selected]?.amountNaira ?? 1500) * 100);
+      type Authorization = { reference?: string; access_code?: string; amount?: number; authorization_url?: string };
+      const authData = authorization as Authorization;
+      const ref = authData.reference || authData.access_code || String(Date.now());
+      const amount = typeof authData.amount === 'number' ? authData.amount : ((paystackConfig?.packages?.[selected]?.amountNaira ?? 1500) * 100);
 
-      // define minimal Paystack type locally
-      type PaystackHandler = {
-        openIframe: () => void;
-      };
-
-      const paystackSetup = (window as unknown as { PaystackPop?: { setup?: (opts: Record<string, unknown>) => PaystackHandler } }).PaystackPop?.setup;
-      if (!paystackSetup) {
+      const paystackGlobal = (window as PaystackWindow).PaystackPop;
+      if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
+        toast.error('Paystack inline not available');
         throw new Error('Paystack inline not available');
       }
-
-      const handler = paystackSetup({
+      const handler = paystackGlobal.setup({
         key: PAYSTACK_PUBLIC_KEY,
         email: email || '',
         amount,
         ref,
         onClose: function() {
+          setLoading(false);
           if (!verifying) toast.info('Payment window closed');
         },
         callback: async function(response: { reference?: string }) {
-          // verification UI: show verifying state, block close
-          setVerifying(true);
           try {
+            setVerifying(true);
+            setLoading(false);
             const vr = await fetch('/api/paystack/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -118,7 +129,6 @@ export default function RenewalModal({ open, onClose, currentPlan = null, email 
             });
             const vdata = await vr.json();
             if (vr.ok && vdata.success) {
-              // show a small receipt inside the modal instead of closing immediately
               const amountN = (vdata?.data?.amount ?? amount) as number;
               const refOut = (vdata?.data?.reference ?? response.reference) as string;
               const discount = vdata?.prorateDiscount ?? 0;
@@ -138,6 +148,10 @@ export default function RenewalModal({ open, onClose, currentPlan = null, email 
           }
         }
       });
+      if (!handler || typeof handler.openIframe !== 'function') {
+        toast.error('Paystack handler setup failed');
+        throw new Error('Paystack handler setup failed');
+      }
       handler.openIframe();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Payment start failed';

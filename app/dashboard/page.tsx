@@ -51,6 +51,7 @@ type FarmerDoc = {
   lon?: number;
   cropStatus?: Record<string, { stage?: string; plantedAt?: string }>;
   photoURL?: string;
+  accessCodeUsed?: boolean;
 };
 
 export default function DashboardPage() {
@@ -215,25 +216,27 @@ useEffect(() => {
       const missingStages = (data.crops ?? []).filter((c) => !(data.cropStatus && data.cropStatus[c] && data.cropStatus[c].stage));
       if (missingStages.length > 0) setStageModalOpen(true);
 
-      // load advisory history (first page)
-      setHistoryLoading(true);
-      try {
-        const res = await fetchAdvisories(user.uid, 10);
-        if (Array.isArray(res)) {
-          setAdvisories((res as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-          setAdviceLastDoc(null);
-        } else if (res && Array.isArray((res as AdvisoryFetchResult).items)) {
-          const result = res as AdvisoryFetchResult;
-          setAdvisories(result.items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-          setAdviceLastDoc(result.lastDoc ?? null);
-        } else {
-          setAdvisories([]);
-          setAdviceLastDoc(null);
+      // Only load advisory if all crops have a stage set
+      if ((data.crops ?? []).length > 0 && missingStages.length === 0) {
+        setHistoryLoading(true);
+        try {
+          const res = await fetchAdvisories(user.uid, 10);
+          if (Array.isArray(res)) {
+            setAdvisories((res as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+            setAdviceLastDoc(null);
+          } else if (res && Array.isArray((res as AdvisoryFetchResult).items)) {
+            const result = res as AdvisoryFetchResult;
+            setAdvisories(result.items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+            setAdviceLastDoc(result.lastDoc ?? null);
+          } else {
+            setAdvisories([]);
+            setAdviceLastDoc(null);
+          }
+        } catch (err) {
+          console.warn("fetchAdvisories error:", err);
+        } finally {
+          setHistoryLoading(false);
         }
-      } catch (err) {
-        console.warn("fetchAdvisories error:", err);
-      } finally {
-        setHistoryLoading(false);
       }
 
       // get coords (use stored lat/lon if available else Nominatim)
@@ -270,7 +273,7 @@ useEffect(() => {
           if (!isSubscribed) {
             setAdvice(t("subscription_required") ?? "Your subscription has expired. Please renew to receive advisories.");
             setLoadingAdvice(false);
-          } else {
+          } else if ((data.crops ?? []).length > 0 && missingStages.length === 0) {
             // Build cropStages object for API
             const cropStages: Record<string, { stage?: string }> = {};
             (data.crops ?? []).forEach((c: string) => {
@@ -360,6 +363,85 @@ useEffect(() => {
   if (user && !authLoading) loadDashboard();
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [user, authLoading]);
+
+// Advisory language sync: re-fetch crop advisory when language changes
+useEffect(() => {
+  if (!farm || !subscriptionActive) return;
+  const missingStages = (farm.crops ?? []).filter((c) => !(farm.cropStatus && farm.cropStatus[c] && farm.cropStatus[c].stage));
+  if ((farm.crops ?? []).length === 0 || missingStages.length > 0) return;
+  // Fetch crop advisory in new language
+  (async () => {
+    setLoadingAdvice(true);
+    try {
+      let lat = farm.lat;
+      let lon = farm.lon;
+      if ((!lat || !lon) && farm.lga && farm.state) {
+        try {
+          const q = encodeURIComponent(`${farm.lga}, ${farm.state}, Nigeria`);
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`);
+          const geoArr = await geoRes.json();
+          if (geoArr && geoArr[0]) {
+            lat = parseFloat(geoArr[0].lat);
+            lon = parseFloat(geoArr[0].lon);
+          }
+        } catch {}
+      }
+      if (!lat || !lon) return;
+      const wRes = await fetch("/api/weather", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lon }),
+      });
+      const wJson = await wRes.json();
+      // Build cropStages object for API
+      const cropStages: Record<string, { stage?: string }> = {};
+      (farm.crops ?? []).forEach((c: string) => {
+        cropStages[c] = { stage: farm.cropStatus?.[c]?.stage ?? "unknown" };
+      });
+      const adRes = await fetch("/api/advice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ crops: farm.crops ?? [], weather: wJson, lang: farm.language ?? "en", cropStages }),
+      });
+      const adJson = await adRes.json();
+      let storedAdvice = "";
+      if (adJson && Array.isArray(adJson.items)) {
+        type AiItem = { crop: string; advice: string };
+        type AiResp = { header?: string; items: AiItem[] };
+        const resp = adJson as AiResp;
+        const map: Record<string, string> = {};
+        resp.items.forEach((it) => {
+          const key = (it.crop || "").toLowerCase();
+          map[key] = it.advice || "";
+        });
+        setCropAdvices(map);
+        const joined = (resp.items || []).map((it, i) => `${i + 1}. ${it.crop}\n${it.advice}`).join("\n\n");
+        const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
+        setAdvice(fullAdvice);
+        storedAdvice = fullAdvice;
+      } else {
+        const generated = adJson?.advisory ?? adJson?.advice ?? "";
+        setAdvice(generated);
+        storedAdvice = generated;
+      }
+      setLoadingAdvice(false);
+      // store advisory in firestore (best effort, ignore errors)
+      try {
+        await addAdvisory(user!.uid, { advice: storedAdvice, weather: wJson, crops: farm.crops ?? [] });
+        const h = await fetchAdvisories(user!.uid, 10);
+        if (Array.isArray(h)) {
+          setAdvisories((h as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+        } else if (h && Array.isArray((h as AdvisoryFetchResult).items)) {
+          setAdvisories((h as AdvisoryFetchResult).items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+        } else {
+          setAdvisories([]);
+        }
+      } catch {}
+    } catch (err) {
+      setLoadingAdvice(false);
+    }
+  })();
+}, [farm?.language]);
 
 // live timer refresh every 30s to cause re-render of remaining time
 useEffect(() => {
@@ -763,13 +845,15 @@ useEffect(() => {
                   <div className="ml-2 text-sm">
                     {subscriptionActive ? (
                       <div className="flex items-center gap-3 bg-white px-3 py-1 rounded border">
-                        <div className="text-xs text-gray-500">{planLabel ? planLabel.toUpperCase() : 'PLAN'}</div>
-                        <div className={`text-sm font-semibold ${nextPaymentDate && ((nextPaymentDate.getTime() - Date.now()) < 3 * 24 * 60 * 60 * 1000) ? 'text-red-600' : 'text-green-700'}`}>{nextPaymentDate ? formatRemainingTime(nextPaymentDate) : 'Active'}</div>
+                        <div className="text-xs text-gray-500">{planLabel ? planLabel.toUpperCase() : (farm?.accessCodeUsed ? 'ACCESS CODE' : 'PLAN')}</div>
+                        <div className={`text-sm font-semibold ${farm?.accessCodeUsed ? 'text-green-700' : nextPaymentDate && ((nextPaymentDate.getTime() - Date.now()) < 3 * 24 * 60 * 60 * 1000) ? 'text-red-600' : 'text-green-700'}`}>{farm?.accessCodeUsed ? 'Access Code' : (nextPaymentDate ? formatRemainingTime(nextPaymentDate) : 'Active')}</div>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <div className="text-xs text-red-600">{t('subscription_expired') ?? 'Subscription expired'}</div>
-                        <button onClick={() => setRenewalOpen(true)} className="px-3 py-1 bg-green-600 text-white rounded text-sm">{t('renew')} </button>
+                        <div className={`text-xs ${farm?.accessCodeUsed ? 'text-green-700' : 'text-red-600'}`}>{farm?.accessCodeUsed ? 'Access Code' : (t('subscription_expired') ?? 'Subscription expired')}</div>
+                        {!farm?.accessCodeUsed && (
+                          <button onClick={() => setRenewalOpen(true)} className="px-3 py-1 bg-green-600 text-white rounded text-sm">{t('renew')} </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1142,7 +1226,7 @@ useEffect(() => {
 
                 realAdvisories.forEach(a => {
                   const d = toDate((a as unknown as { createdAt?: unknown }).createdAt);
-                  const key = d.toISOString().slice(0, 10);
+                  const key = d.toISOString().slice(10, 0);
                   if (!grouped[key]) grouped[key] = [];
                   grouped[key].push(a);
                 });
@@ -1289,6 +1373,7 @@ useEffect(() => {
                   </label>
 
                   <button className="px-3 py-2 bg-red-50 text-red-600 rounded border" onClick={async () => {
+                    toast.info(t("logout") ?? "Logging out...");
                     await import("firebase/auth").then(({ signOut }) => signOut(auth));
                     router.push("/");
                   }}>

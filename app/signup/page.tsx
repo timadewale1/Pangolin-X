@@ -297,12 +297,27 @@ export default function SignupPage() {
         }
 
         // Dynamically load Paystack inline script if needed
+        type PaystackWindow = Window & {
+          PaystackPop?: {
+            setup: (opts: {
+              key: string;
+              email: string;
+              amount: number;
+              ref: string;
+              onClose?: () => void;
+              callback?: (response: { reference?: string }) => void | Promise<void>;
+            }) => { openIframe: () => void };
+          };
+        };
         const loadScript = () => new Promise<void>((resolve, reject) => {
           if (typeof window === 'undefined') return reject(new Error('No window'));
-          if ((window as unknown as { PaystackPop?: unknown }).PaystackPop) return resolve();
+          if ((window as PaystackWindow).PaystackPop) return resolve();
           const s = document.createElement('script');
           s.src = 'https://js.paystack.co/v1/inline.js';
-          s.onload = () => resolve();
+          s.onload = () => {
+            if ((window as PaystackWindow).PaystackPop) resolve();
+            else reject(new Error('PaystackPop not available after script load'));
+          };
           s.onerror = () => reject(new Error('Failed to load Paystack script'));
           document.body.appendChild(s);
         });
@@ -310,8 +325,7 @@ export default function SignupPage() {
         try {
           await loadScript();
         } catch (err) {
-          console.error('Failed to load Paystack inline script:', err);
-          // fallback to redirect
+          toast.error('Failed to load Paystack inline script');
           if (payData?.data?.authorization_url) {
             window.location.href = payData.data.authorization_url;
             return;
@@ -320,11 +334,15 @@ export default function SignupPage() {
         }
 
         // Open paystack inline modal
-  const reference = payData.data.reference || payData.data.access_code || String(Date.now());
+        const reference = payData.data.reference || payData.data.access_code || String(Date.now());
         const amount = payData.data.amount ?? 2000 * 100;
-  const paystackGlobal = (window as unknown as { PaystackPop?: { setup: (opts: { key: string; email: string; amount?: number; ref?: string; onClose?: () => void; callback?: (resp: { reference?: string }) => void }) => { openIframe: () => void } } }).PaystackPop;
-  const handler = paystackGlobal!.setup({
-    key: PAYSTACK_PUBLIC_KEY as string,
+        const paystackGlobal = (window as PaystackWindow).PaystackPop;
+        if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
+          toast.error('Paystack inline not available');
+          throw new Error('Paystack inline not available');
+        }
+        const handler = paystackGlobal.setup({
+          key: PAYSTACK_PUBLIC_KEY as string,
           email: formState.email,
           amount,
           ref: reference,
@@ -340,7 +358,7 @@ export default function SignupPage() {
                 body: JSON.stringify({ reference: response.reference })
               });
               const vdata = await vr.json();
-                if (vr.ok && vdata.data && vdata.data.status === 'success') {
+              if (vr.ok && vdata.data && vdata.data.status === 'success') {
                 // proceed to create user now (payment done in-page)
                 try {
                   const create = await createUserWithEmailAndPassword(auth, formState.email, formState.password);
@@ -363,7 +381,7 @@ export default function SignupPage() {
                   });
                   toast.success('Account created. Redirecting to login...');
                   setTimeout(() => router.push('/login'), 900);
-                  } catch (e) {
+                } catch (e) {
                   console.error('Failed to create user after payment:', e);
                   toast.error('Failed to create account after payment');
                 }
@@ -377,6 +395,10 @@ export default function SignupPage() {
             }
           }
         });
+        if (!handler || typeof handler.openIframe !== 'function') {
+          toast.error('Paystack handler setup failed');
+          throw new Error('Paystack handler setup failed');
+        }
         handler.openIframe();
         return;
       }
