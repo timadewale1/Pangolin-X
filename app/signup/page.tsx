@@ -475,10 +475,18 @@ export default function SignupPage() {
             <div className="mb-4">
               <label className="text-sm font-medium">Choose plan</label>
               <div className="flex gap-2 mt-2">
-                <button type="button" onClick={() => setSelectedPackage('monthly')} className={`px-3 py-2 rounded border ${selectedPackage === 'monthly' ? 'bg-white text-green-700 border-green-600' : 'bg-transparent text-white/80 border-white/10'}`}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPackage('monthly')}
+                  className={`px-3 py-2 rounded border ${selectedPackage === 'monthly' ? 'bg-green-50 text-green-700 border-green-600' : 'bg-white text-gray-700 border-gray-200'}`}
+                >
                   Monthly — ₦1,500
                 </button>
-                <button type="button" onClick={() => setSelectedPackage('yearly')} className={`px-3 py-2 rounded border ${selectedPackage === 'yearly' ? 'bg-white text-green-700 border-green-600' : 'bg-transparent text-white/80 border-white/10'}`}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPackage('yearly')}
+                  className={`px-3 py-2 rounded border ${selectedPackage === 'yearly' ? 'bg-green-50 text-green-700 border-green-600' : 'bg-white text-gray-700 border-gray-200'}`}
+                >
                   Yearly — ₦15,000
                 </button>
               </div>

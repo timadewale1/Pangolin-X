@@ -668,12 +668,7 @@ useEffect(() => {
     }
   }
 
-  // utility: find latest advice for a given cropId (search history first)
-  function latestAdviceForCrop(cropId: string) {
-    const found = advisories.find((a) => a.crops && a.crops.includes(cropId));
-    if (found) return found.advice ?? found.advice;
-    return advice || t("no_advice_available");
-  }
+  // (removed unused latestAdviceForCrop helper; we use cropAdvices map or the general `advice`)
 
   // Render guards
   if (authLoading || loading) {
@@ -882,42 +877,63 @@ useEffect(() => {
                     {/* Crop grid with advice per crop */}
                     <div className="p-4 rounded-lg bg-white shadow-sm">
                       <div className="grid grid-cols-1 gap-3">
-                        {(farm?.crops ?? []).length === 0 ? (
+                        {!subscriptionActive ? (
+                          <div className="p-3 border rounded-lg">
+                            <div className="text-red-600 font-medium">{t('subscription_expired') ?? 'Subscription expired'}</div>
+                            <div className="mt-2 text-sm">
+                              <button onClick={() => setRenewalOpen(true)} className="px-3 py-1 bg-green-600 text-white rounded">
+                                {t('renew') ?? 'Renew subscription'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (farm?.crops ?? []).length === 0 ? (
                           <div className="text-gray-600">{t("no_crops_selected")}</div>
                         ) : (
-                          (farm?.crops ?? []).map((cId, idx) => (
-                            <div key={cId} className="p-3 border rounded-lg flex flex-col gap-2">
-                              <div className="flex gap-3 items-start">
-                                <div className="w-12 text-center flex-shrink-0 pt-2">
-                                  <div className="text-sm font-bold text-white bg-green-600 rounded-full w-8 h-8 flex items-center justify-center">{idx+1}</div>
+                          // If we have crop-specific advices returned from AI, show each crop's advice.
+                          // Otherwise show the general advice once at the top.
+                          (Object.keys(cropAdvices).length > 0
+                            ? (farm?.crops ?? []).map((cId, idx) => (
+                                <div key={cId} className="p-3 border rounded-lg flex flex-col gap-2">
+                                  <div className="flex gap-3 items-start">
+                                    <div className="w-12 text-center flex-shrink-0 pt-2">
+                                      <div className="text-sm font-bold text-white bg-green-600 rounded-full w-8 h-8 flex items-center justify-center">{idx+1}</div>
+                                    </div>
+                                    <div className="w-16 h-16 rounded overflow-hidden bg-gray-100 flex-shrink-0">
+                                      <Image
+                                        src={CROP_OPTIONS.find((c) => c.id === cId)?.img || `https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop`}
+                                        alt={cId}
+                                        width={64}
+                                        height={64}
+                                        style={{ objectFit: "cover" }}
+                                      />
+                                    </div>
+                                    <div className="flex-1 flex flex-col">
+                                      <div className="font-semibold text-green-800">{cId.charAt(0).toUpperCase() + cId.slice(1)}</div>
+                                      <div className="text-xs text-gray-500">{t("stage_label")}: {farm?.cropStatus?.[cId]?.stage ?? t("unknown_stage")}</div>
+                                    </div>
+                                    <div>
+                                      <button
+                                        onClick={() => openCropDetail(cId)}
+                                        className="px-3 py-2 rounded bg-white border text-sm"
+                                      >
+                                        {t("view")}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="mt-1 text-gray-700 w-full whitespace-pre-line">
+                                    {/* Only show this crop's specific advice */}
+                                    {cropAdvices[cId.toLowerCase()] ?? t("no_advice_available")}
+                                  </div>
                                 </div>
-                                <div className="w-16 h-16 rounded overflow-hidden bg-gray-100 flex-shrink-0">
-                                  <Image
-                                    src={CROP_OPTIONS.find((c) => c.id === cId)?.img || `https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop`}
-                                    alt={cId}
-                                    width={64}
-                                    height={64}
-                                    style={{ objectFit: "cover" }}
-                                  />
-                                </div>
-                                <div className="flex-1 flex flex-col">
-                                  <div className="font-semibold text-green-800">{cId.charAt(0).toUpperCase() + cId.slice(1)}</div>
-                                  <div className="text-xs text-gray-500">{t("stage_label")}: {farm?.cropStatus?.[cId]?.stage ?? t("unknown_stage")}</div>
-                                </div>
-                                <div>
-                                  <button
-                                    onClick={() => openCropDetail(cId)}
-                                    className="px-3 py-2 rounded bg-white border text-sm"
-                                  >
-                                    {t("view")}
-                                  </button>
-                                </div>
+                              ))
+                            : (
+                              // Show a single general advice block when no per-crop items exist
+                              <div className="p-3 border rounded-lg">
+                                <div className="font-semibold text-green-800">{t('general_advice') ?? 'Latest advice'}</div>
+                                <div className="mt-2 text-gray-700 whitespace-pre-line">{advice || t("no_advice_available")}</div>
                               </div>
-                              <div className="mt-1 text-gray-700 w-full whitespace-pre-line">
-                                {cropAdvices[cId.toLowerCase()] ?? latestAdviceForCrop(cId)}
-                              </div>
-                            </div>
-                          ))
+                            )
+                          )
                         )}
                       </div>
                     </div>
