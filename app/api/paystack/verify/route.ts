@@ -252,9 +252,13 @@ export async function POST(req: Request) {
       }
     }
 
+    // Return the raw Paystack transaction data under `data` so client-side
+    // code that expects `vdata.data.status` continues to work. Server-processed
+    // fields are exposed under `serverData` for clarity.
     return createResponse({
       success: true,
-      data: {
+      data: data?.data ?? null,
+      serverData: {
         email,
         plan,
         paidAt,
