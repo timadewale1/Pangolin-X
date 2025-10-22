@@ -33,9 +33,6 @@ type FormData = {
   title?: string;
 };
 
-// const CROP_OPTIONS = [
-//   { id: "maize", label: "Maize", img: "https://images.unsplash.com/photo-1508061253142-4f6f2c2b3f4a?q=80&w=600&auto=format&fit=crop" },
-//   { id: "cassava", label: "Cassava", img: "https://images.unsplash.com/photo-1567306226416-28f0efdc88ce?q=80&w=600&auto=format&fit=crop" },
 //   { id: "rice", label: "Rice", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop" },
 //   { id: "cowpea", label: "Cowpea", img: "https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=600&auto=format&fit=crop" },
 //   { id: "yam", label: "Yam", img: "https://images.unsplash.com/photo-1601004890684-d8cbf643f5f2?q=80&w=600&auto=format&fit=crop" },
@@ -347,18 +344,16 @@ export default function SignupPage() {
         }
 
         // Open paystack inline modal
-        const reference = payData.data.reference || payData.data.access_code || String(Date.now());
-        const amount = payData?.data?.amount;
-        if (!amount || typeof amount !== 'number' || amount <= 0) {
-          toast.error('Invalid package price. Please select a valid plan.');
-          setLocalLoading(false);
-          return;
-        }
-        const paystackGlobal = (window as PaystackWindow).PaystackPop;
-        if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
-          toast.error('Paystack inline not available');
-          throw new Error('Paystack inline not available');
-        }
+       const reference = payData.data.reference || payData.data.access_code || String(Date.now());
+const selectedPrice = pkg === 'yearly' ? 15000 : 1500;
+const amount = selectedPrice * 100; // Paystack uses kobo
+
+const paystackGlobal = (window as PaystackWindow).PaystackPop;
+if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
+  toast.error('Paystack inline not available');
+  throw new Error('Paystack inline not available');
+}
+
         const handler = paystackGlobal.setup({
           key: PAYSTACK_PUBLIC_KEY as string,
           email: formState.email,
