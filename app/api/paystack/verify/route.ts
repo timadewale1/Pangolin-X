@@ -1,5 +1,6 @@
 // Default handler for unsupported methods
 export function GET() {
+  console.log('[paystack/verify] Received GET request');
   return new NextResponse(JSON.stringify({ success: false, message: 'Method Not Allowed' }), {
     status: 405,
     headers: {
@@ -100,6 +101,7 @@ function createResponse(
 export async function OPTIONS() {
   const headersList = await headers();
   const origin = headersList.get('origin');
+  console.log('[paystack/verify] OPTIONS request - Origin:', origin, 'Headers:', Object.fromEntries(headersList.entries()));
 
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     return new NextResponse(null, {
@@ -118,11 +120,13 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   try {
-    // Validate origin
+    // Log incoming request metadata for debugging
     const headersList = await headers();
     const origin = headersList.get('origin');
-    
+    console.log('[paystack/verify] POST request - Origin:', origin, 'Headers:', Object.fromEntries(headersList.entries()));
+
     if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+      console.warn('[paystack/verify] Origin not allowed:', origin);
       return createResponse(
         { success: false, message: 'Origin not allowed' },
         403,
