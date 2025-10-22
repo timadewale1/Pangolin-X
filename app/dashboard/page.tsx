@@ -173,14 +173,16 @@ export default function DashboardPage() {
 // load farmer doc + auto-generate latest advisory on mount/login
 useEffect(() => {
   const loadDashboard = async () => {
-    setLoading(true);
     try {
+      // if auth still loading, wait for next run
       if (authLoading) return;
       if (!user) {
         setLoading(false);
         return;
       }
 
+      // fetch farmer doc (short blocking period only for doc read)
+      setLoading(true);
       const ref = doc(db, "farmers", user.uid);
       const snap = await getDoc(ref);
       if (!snap.exists()) {
@@ -193,7 +195,7 @@ useEffect(() => {
       const data = snap.data() as FarmerDoc;
       setFarm(data);
 
-      // compute subscription info
+      // compute subscription info (keep immediate UI values available)
       const snapData = snap.data() as Record<string, unknown>;
       const plan = (snapData?.plan as string) ?? null;
       const accessCodeUsed = Boolean(snapData?.accessCodeUsed === true);
@@ -216,146 +218,155 @@ useEffect(() => {
       const missingStages = (data.crops ?? []).filter((c) => !(data.cropStatus && data.cropStatus[c] && data.cropStatus[c].stage));
       if (missingStages.length > 0) setStageModalOpen(true);
 
-      // Only load advisory if all crops have a stage set
-      if ((data.crops ?? []).length > 0 && missingStages.length === 0) {
-        setHistoryLoading(true);
+      // allow UI to render immediately after farmer doc is available
+      setLoading(false);
+
+      // Background work: fetch advisories, weather, AI advice and fragility without blocking initial render
+      (async () => {
         try {
-          const res = await fetchAdvisories(user.uid, 10);
-          if (Array.isArray(res)) {
-            setAdvisories((res as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-            setAdviceLastDoc(null);
-          } else if (res && Array.isArray((res as AdvisoryFetchResult).items)) {
-            const result = res as AdvisoryFetchResult;
-            setAdvisories(result.items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-            setAdviceLastDoc(result.lastDoc ?? null);
-          } else {
-            setAdvisories([]);
-            setAdviceLastDoc(null);
-          }
-        } catch (err) {
-          console.warn("fetchAdvisories error:", err);
-        } finally {
-          setHistoryLoading(false);
-        }
-      }
-
-      // get coords (use stored lat/lon if available else Nominatim)
-      let lat = (data as FarmerDoc).lat;
-      let lon = (data as FarmerDoc).lon;
-      if ((!lat || !lon) && data.lga && data.state) {
-        try {
-          const q = encodeURIComponent(`${data.lga}, ${data.state}, Nigeria`);
-          const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`);
-          const geoArr = await geoRes.json();
-          if (geoArr && geoArr[0]) {
-            lat = parseFloat(geoArr[0].lat);
-            lon = parseFloat(geoArr[0].lon);
-          }
-        } catch (err) {
-          console.warn("Geocode failed", err);
-        }
-      }
-
-      if (!lat || !lon) {
-        toast.info(t("no_coords") ?? "Location coordinates not available. Please update your location in Settings.");
-      } else {
-        try {
-          const wRes = await fetch("/api/weather", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lat, lon }),
-          });
-          const wJson = await wRes.json();
-          setWeather(wJson);
-
-          const isSubscribed = accessCodeUsed || (paidAccess && npDate && npDate > new Date());
-          setLoadingAdvice(true);
-          if (!isSubscribed) {
-            setAdvice(t("subscription_required") ?? "Your subscription has expired. Please renew to receive advisories.");
-            setLoadingAdvice(false);
-          } else if ((data.crops ?? []).length > 0 && missingStages.length === 0) {
-            // Build cropStages object for API
-            const cropStages: Record<string, { stage?: string }> = {};
-            (data.crops ?? []).forEach((c: string) => {
-              cropStages[c] = { stage: data.cropStatus?.[c]?.stage ?? "unknown" };
-            });
-
+          // fetch advisory history (if applicable)
+          if ((data.crops ?? []).length > 0 && missingStages.length === 0) {
+            setHistoryLoading(true);
             try {
-              const adRes = await fetch("/api/advice", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ crops: data.crops ?? [], weather: wJson, lang: data.language ?? "en", cropStages }),
-              });
-              const adJson = await adRes.json();
-              let storedAdvice = "";
-              if (adJson && Array.isArray(adJson.items)) {
-                type AiItem = { crop: string; advice: string };
-                type AiResp = { header?: string; items: AiItem[] };
-                const resp = adJson as AiResp;
-                const map: Record<string, string> = {};
-                resp.items.forEach((it) => {
-                  const key = (it.crop || "").toLowerCase();
-                  map[key] = it.advice || "";
-                });
-                setCropAdvices(map);
-                const joined = (resp.items || []).map((it, i) => `${i + 1}. ${it.crop}\n${it.advice}`).join("\n\n");
-                const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
-                setAdvice(fullAdvice);
-                storedAdvice = fullAdvice;
+              const res = await fetchAdvisories(user.uid, 10);
+              if (Array.isArray(res)) {
+                setAdvisories((res as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                setAdviceLastDoc(null);
+              } else if (res && Array.isArray((res as AdvisoryFetchResult).items)) {
+                const result = res as AdvisoryFetchResult;
+                setAdvisories(result.items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                setAdviceLastDoc(result.lastDoc ?? null);
               } else {
-                const generated = adJson?.advisory ?? adJson?.advice ?? "";
-                setAdvice(generated);
-                storedAdvice = generated;
-              }
-              setLoadingAdvice(false);
-
-              // store advisory in firestore (best effort, ignore errors)
-              try {
-                await addAdvisory(user.uid, { advice: storedAdvice, weather: wJson, crops: data.crops ?? [] });
-                const h = await fetchAdvisories(user.uid, 10);
-                if (Array.isArray(h)) {
-                  setAdvisories((h as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-                } else if (h && Array.isArray((h as AdvisoryFetchResult).items)) {
-                  setAdvisories((h as AdvisoryFetchResult).items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-                } else {
-                  setAdvisories([]);
-                }
-              } catch (err) {
-                console.warn("saving advisory failed", err);
+                setAdvisories([]);
+                setAdviceLastDoc(null);
               }
             } catch (err) {
-              console.warn("advice fetch failed", err);
-              setLoadingAdvice(false);
+              console.warn("fetchAdvisories error:", err);
+            } finally {
+              setHistoryLoading(false);
             }
           }
 
-          // fragility advisory (best-effort)
-          try {
-            const fRes = await fetch("/api/fragility", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ lang: data.language ?? "en", lga: data.lga ?? "" }),
-            });
-            const fJson = await fRes.json();
-            setFragility(fJson);
+          // get coords (use stored lat/lon if available else Nominatim)
+          let lat = (data as FarmerDoc).lat;
+          let lon = (data as FarmerDoc).lon;
+          if ((!lat || !lon) && data.lga && data.state) {
             try {
-              await addFragilityAdvisory(user.uid, { header: fJson.header ?? "Fragility advisory", sections: Array.isArray(fJson.sections) ? fJson.sections : [], weather: wJson });
-              const fh = await fetchFragilityAdvisories(user.uid, 10);
-              if (Array.isArray(fh)) setFragilityHistory(fh as FragilityResp[]);
-            } catch (e) {
-              console.warn("persisting fragility failed", e);
+              const q = encodeURIComponent(`${data.lga}, ${data.state}, Nigeria`);
+              const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`);
+              const geoArr = await geoRes.json();
+              if (geoArr && geoArr[0]) {
+                lat = parseFloat(geoArr[0].lat);
+                lon = parseFloat(geoArr[0].lon);
+              }
+            } catch (err) {
+              console.warn("Geocode failed", err);
             }
-          } catch (e) {
-            console.warn("fragility fetch failed", e);
+          }
+
+          if (!lat || !lon) {
+            toast.info(t("no_coords") ?? "Location coordinates not available. Please update your location in Settings.");
+          } else {
+            try {
+              const wRes = await fetch("/api/weather", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ lat, lon }),
+              });
+              const wJson = await wRes.json();
+              setWeather(wJson);
+
+              const isSubscribed = accessCodeUsed || (paidAccess && npDate && npDate > new Date());
+              setLoadingAdvice(true);
+              if (!isSubscribed) {
+                setAdvice(t("subscription_required") ?? "Your subscription has expired. Please renew to receive advisories.");
+                setLoadingAdvice(false);
+              } else if ((data.crops ?? []).length > 0 && missingStages.length === 0) {
+                // Build cropStages object for API
+                const cropStages: Record<string, { stage?: string }> = {};
+                (data.crops ?? []).forEach((c: string) => {
+                  cropStages[c] = { stage: data.cropStatus?.[c]?.stage ?? "unknown" };
+                });
+
+                try {
+                  const adRes = await fetch("/api/advice", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ crops: data.crops ?? [], weather: wJson, lang: data.language ?? "en", cropStages }),
+                  });
+                  const adJson = await adRes.json();
+                  let storedAdvice = "";
+                  if (adJson && Array.isArray(adJson.items)) {
+                    type AiItem = { crop: string; advice: string };
+                    type AiResp = { header?: string; items: AiItem[] };
+                    const resp = adJson as AiResp;
+                    const map: Record<string, string> = {};
+                    resp.items.forEach((it) => {
+                      const key = (it.crop || "").toLowerCase();
+                      map[key] = it.advice || "";
+                    });
+                    setCropAdvices(map);
+                    const joined = (resp.items || []).map((it, i) => `${i + 1}. ${it.crop}\n${it.advice}`).join("\n\n");
+                    const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
+                    setAdvice(fullAdvice);
+                    storedAdvice = fullAdvice;
+                  } else {
+                    const generated = adJson?.advisory ?? adJson?.advice ?? "";
+                    setAdvice(generated);
+                    storedAdvice = generated;
+                  }
+                  setLoadingAdvice(false);
+
+                  // store advisory in firestore (best effort, ignore errors)
+                  try {
+                    await addAdvisory(user.uid, { advice: storedAdvice, weather: wJson, crops: data.crops ?? [] });
+                    const h = await fetchAdvisories(user.uid, 10);
+                    if (Array.isArray(h)) {
+                      setAdvisories((h as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                    } else if (h && Array.isArray((h as AdvisoryFetchResult).items)) {
+                      setAdvisories((h as AdvisoryFetchResult).items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                    } else {
+                      setAdvisories([]);
+                    }
+                  } catch (err) {
+                    console.warn("saving advisory failed", err);
+                  }
+                } catch (err) {
+                  console.warn("advice fetch failed", err);
+                  setLoadingAdvice(false);
+                }
+              }
+
+              // fragility advisory (best-effort)
+              try {
+                const fRes = await fetch("/api/fragility", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ lang: data.language ?? "en", lga: data.lga ?? "" }),
+                });
+                const fJson = await fRes.json();
+                setFragility(fJson);
+                try {
+                  await addFragilityAdvisory(user.uid, { header: fJson.header ?? "Fragility advisory", sections: Array.isArray(fJson.sections) ? fJson.sections : [], weather: wJson });
+                  const fh = await fetchFragilityAdvisories(user.uid, 10);
+                  if (Array.isArray(fh)) setFragilityHistory(fh as FragilityResp[]);
+                } catch (e) {
+                  console.warn("persisting fragility failed", e);
+                }
+              } catch (e) {
+                console.warn("fragility fetch failed", e);
+              }
+            } catch (err) {
+              console.warn("weather/advice flow failed", err);
+            }
           }
         } catch (err) {
-          console.warn("weather/advice flow failed", err);
+          console.warn("background dashboard tasks failed", err);
         }
-      }
+      })();
     } catch (err) {
       console.error("Dashboard load error:", err);
       toast.error(t("failed_load_dashboard") ?? "Failed to load dashboard data.");
-    } finally {
       setLoading(false);
     }
   };
@@ -437,10 +448,11 @@ useEffect(() => {
           setAdvisories([]);
         }
       } catch {}
-    } catch (err) {
+    } catch {
       setLoadingAdvice(false);
     }
   })();
+// eslint-disable-next-line react-hooks/exhaustive-deps
 }, [farm?.language]);
 
 // live timer refresh every 30s to cause re-render of remaining time
@@ -924,7 +936,34 @@ useEffect(() => {
 
               <div className="mt-6">
                 {loadingAdvice ? (
-                  <div className="py-8 flex justify-center"><Loader /></div>
+                  // lightweight skeleton UI for perceived performance
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-lg bg-white shadow-sm">
+                      <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-3">
+                        <div className="p-4 rounded-lg bg-gradient-to-br from-green-50 to-white border flex flex-col items-start gap-2">
+                          <div className="h-4 bg-gray-200 rounded w-24 animate-pulse" />
+                          <div className="h-7 bg-gray-200 rounded w-20 animate-pulse" />
+                          <div className="h-3 bg-gray-200 rounded w-32 animate-pulse" />
+                        </div>
+                        <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-50 to-white border flex flex-col items-start gap-2">
+                          <div className="h-4 bg-gray-200 rounded w-20 animate-pulse" />
+                          <div className="h-7 bg-gray-200 rounded w-20 animate-pulse" />
+                          <div className="h-3 bg-gray-200 rounded w-24 animate-pulse" />
+                        </div>
+                        <div className="p-4 rounded-lg bg-gradient-to-br from-blue-50 to-white border flex flex-col items-start gap-2 col-span-1 xs:col-span-2 md:col-span-1 mx-auto">
+                          <div className="h-4 bg-gray-200 rounded w-24 animate-pulse" />
+                          <div className="h-6 bg-gray-200 rounded w-40 animate-pulse" />
+                          <div className="h-3 bg-gray-200 rounded w-28 animate-pulse" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-lg bg-white shadow-sm">
+                      <div className="space-y-3">
+                        <div className="h-5 bg-gray-200 rounded w-40 animate-pulse" />
+                        <div className="h-40 bg-gray-200 rounded w-full animate-pulse" />
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Weather cards: 2 columns on mobile, 3 on md+ */}
