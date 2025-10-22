@@ -1,4 +1,5 @@
 
+console.log("[paystack/verify] Route file loaded successfully");
 import { NextResponse } from "next/server";
 import { headers } from 'next/headers';
 import admin from "firebase-admin";
