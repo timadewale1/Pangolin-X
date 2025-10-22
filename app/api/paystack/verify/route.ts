@@ -62,11 +62,14 @@ const planPrices: Record<PlanType, number> = {
 if (!admin.apps.length) {
   try {
     const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
-    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
-    const serviceAccount = JSON.parse(keyRaw);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
-    });
+    if (!keyRaw) {
+      console.warn('Missing SERVICE_ACCOUNT_KEY — skipping Firebase Admin init');
+    } else {
+      const serviceAccount = JSON.parse(keyRaw);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
+      });
+    }
   } catch (err) {
     console.error("Failed to init firebase-admin (paystack verify):", err);
   }
