@@ -19,33 +19,36 @@ export default function VerifyPaymentPageInner() {
           setVerifying(false);
           return;
         }
-        console.log('Signup verify: verifying payment with reference:', reference);
-        const res = await fetch('/api/paystack/verify', {
-          method: 'POST',
+
+        console.log("Signup verify: verifying payment with reference:", reference);
+        const res = await fetch("/api/paystack/verify", {
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            "Content-Type": "application/json",
+            "Accept": "application/json",
           },
-          credentials: 'include',
+          credentials: "include",
           body: JSON.stringify({ reference }),
         });
 
         if (!res.ok) {
           const errText = await res.text();
-          console.error('Verify response not ok:', res.status, errText);
+          console.error("Verify response not ok:", res.status, errText);
           if (res.status === 405) {
-            setError('Payment verification endpoint not allowed (405). Please contact support.');
+            setError("Payment verification endpoint not allowed (405). Please contact support.");
             setVerifying(false);
             return;
           }
-          setError('Payment verification failed');
+          setError("Payment verification failed");
           setVerifying(false);
           return;
         }
 
         const data = await res.json();
+        console.log("Verification result:", data);
 
-        if (data.status && data.data?.status === "success") {
+        // ✅ Simplified success check
+        if (data.success) {
           const storedData = localStorage.getItem("pangolin-signup-data");
           if (!storedData) {
             setError("Missing signup data");
