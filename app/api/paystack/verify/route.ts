@@ -1,18 +1,21 @@
-// Default handler for unsupported methods
-export function GET() {
-  console.log('[paystack/verify] Received GET request');
-  return new NextResponse(JSON.stringify({ success: false, message: 'Method Not Allowed' }), {
-    status: 405,
-    headers: {
-      'Allow': 'POST, OPTIONS',
-      'Content-Type': 'application/json',
-    },
-  });
-}
 
 import { NextResponse } from "next/server";
 import { headers } from 'next/headers';
 import admin from "firebase-admin";
+
+
+// // Default handler for unsupported methods
+// export function GET() {
+//   console.log('[paystack/verify] Received GET request');
+//   return new NextResponse(JSON.stringify({ success: false, message: 'Method Not Allowed' }), {
+//     status: 405,
+//     headers: {
+//       'Allow': 'POST, OPTIONS',
+//       'Content-Type': 'application/json',
+//     },
+//   });
+// }
+
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
