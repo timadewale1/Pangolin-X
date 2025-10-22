@@ -390,6 +390,19 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                         );
                         const uid = create.user.uid;
 
+                        // compute nextPaymentDate based on selected package
+                        const paidAt = new Date();
+                        let nextPaymentDate: string | null = null;
+                        if (pkg === 'monthly') {
+                          const d = new Date(paidAt);
+                          d.setMonth(d.getMonth() + 1);
+                          nextPaymentDate = d.toISOString();
+                        } else if (pkg === 'yearly') {
+                          const d = new Date(paidAt);
+                          d.setFullYear(d.getFullYear() + 1);
+                          nextPaymentDate = d.toISOString();
+                        }
+
                         await setDoc(doc(db, 'farmers', uid), {
                           name: formState.name,
                           email: formState.email,
@@ -399,9 +412,10 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                           crops: formState.crops,
                           language: (formState && formState.language) ? formState.language : 'en',
                           title: (formState && formState.title) ? formState.title : '',
-                          createdAt: new Date().toISOString(),
+                          createdAt: paidAt.toISOString(),
                           paidAccess: true,
-                          paymentDate: new Date().toISOString(),
+                          paymentDate: paidAt.toISOString(),
+                          ...(nextPaymentDate && { nextPaymentDate }),
                           plan: pkg ?? null,
                           accessCodeUsed: false,
                         });
@@ -436,6 +450,20 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
       // If we have a valid access code or coming back from successful payment, create account
       const create = await createUserWithEmailAndPassword(auth, formState.email, formState.password);
       const uid = create.user.uid;
+
+      // if this creation happened after a payment return, compute nextPaymentDate
+      const paidAt = new Date();
+      let nextPaymentDate: string | null = null;
+      if (paymentSuccessReturn && pkg === 'monthly') {
+        const d = new Date(paidAt);
+        d.setMonth(d.getMonth() + 1);
+        nextPaymentDate = d.toISOString();
+      } else if (paymentSuccessReturn && pkg === 'yearly') {
+        const d = new Date(paidAt);
+        d.setFullYear(d.getFullYear() + 1);
+        nextPaymentDate = d.toISOString();
+      }
+
       await setDoc(doc(db, "farmers", uid), {
         name: formState.name,
         email: formState.email,
@@ -445,9 +473,10 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
         crops: formState.crops,
         language: (formState && formState.language) ? formState.language : "en",
         title: (formState && formState.title) ? formState.title : "",
-        createdAt: new Date().toISOString(),
+        createdAt: paidAt.toISOString(),
         paidAccess: true,
-        paymentDate: new Date().toISOString(),
+        paymentDate: paidAt.toISOString(),
+        ...(nextPaymentDate && { nextPaymentDate }),
         plan: paymentSuccessReturn ? (pkg ?? null) : null,
         accessCodeUsed: accessCodeValid ? true : false,
       });

@@ -28,10 +28,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <link rel="icon" href="/Pangolin.png" />
+        {/* Use the actual file in public/ - filename includes "-x" */}
+        <link rel="icon" href="/Pangolin-x.png" />
         <meta property="og:title" content="Pangolin-x — Smart weather & AI advisory for farmers" />
         <meta property="og:description" content="Local weather forecasts and AI-driven crop advice for Nigerian farmers." />
-        <meta property="og:image" content="/Pangolin.png" />
+        <meta property="og:image" content="/Pangolin-x.png" />
         <meta name="twitter:card" content="summary_large_image" />
       </head>
       <body>
