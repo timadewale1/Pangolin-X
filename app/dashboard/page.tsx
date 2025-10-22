@@ -99,7 +99,7 @@ export default function DashboardPage() {
     }
     return null;
   }
-  function setCache(key: string, value: unknown, ttlMs = 10 * 60 * 1000) {
+  function setCache(key: string, value: unknown, ttlMs = 60 * 60 * 1000) {
     try {
       const expires = Date.now() + ttlMs;
       const storedAt = Date.now();
@@ -164,6 +164,8 @@ export default function DashboardPage() {
   const [adviceUpdatedAt, setAdviceUpdatedAt] = useState<number | null>(null);
   const [weatherFromCache, setWeatherFromCache] = useState(false);
   const [adviceFromCache, setAdviceFromCache] = useState(false);
+  const [fragilityUpdatedAt, setFragilityUpdatedAt] = useState<number | null>(null);
+  const [fragilityFromCache, setFragilityFromCache] = useState(false);
   const [renewalOpen, setRenewalOpen] = useState(false);
   const [fragilityHistory, setFragilityHistory] = useState<FragilityResp[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -187,6 +189,55 @@ export default function DashboardPage() {
   const [selectedAdvisory, setSelectedAdvisory] = useState<Advisory | null>(null);
   const [fragilityDetailOpen, setFragilityDetailOpen] = useState(false);
   const [selectedFragility, setSelectedFragility] = useState<(FragilityResp & { createdAt?: unknown; id?: string }) | null>(null);
+
+
+  // helper: format HH:MM from timestamp
+  function formatHHMM(ts: number | null) {
+    if (!ts) return "";
+    try {
+      const d = new Date(ts);
+      const hh = d.getHours().toString().padStart(2, '0');
+      const mm = d.getMinutes().toString().padStart(2, '0');
+      return `${hh}:${mm}`;
+    } catch {
+      return "";
+    }
+  }
+
+  // fetch fragility advisory when user opens fragility tab (use cache + background refresh)
+  useEffect(() => {
+    if (activeTab !== 'fragility') return;
+    (async () => {
+      if (!user) return;
+      const key = `fragility:${user.uid}:${farm?.language ?? 'en'}:${farm?.lga ?? ''}`;
+      const cached = getCache(key);
+      const cachedTime = getCacheTime(key);
+      if (cached) {
+        setFragility(cached as FragilityResp);
+        setFragilityUpdatedAt(cachedTime ?? Date.now());
+        setFragilityFromCache(true);
+      }
+      try {
+        const fRes = await fetch('/api/fragility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: farm?.language ?? 'en', lga: farm?.lga ?? '' }) });
+        const fJson = await fRes.json();
+        setFragility(fJson);
+        setFragilityFromCache(false);
+        setFragilityUpdatedAt(Date.now());
+        setCache(key, fJson);
+        // persist and history
+        try {
+          await addFragilityAdvisory(user.uid, { header: fJson.header ?? 'Fragility advisory', sections: Array.isArray(fJson.sections) ? fJson.sections : [], weather: weather ?? null });
+          const fh = await fetchFragilityAdvisories(user.uid, 10);
+          if (Array.isArray(fh)) setFragilityHistory(fh as FragilityResp[]);
+        } catch (e) {
+          console.warn('persisting fragility failed', e);
+        }
+      } catch (err) {
+        console.warn('fragility fetch failed', err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, user, farm?.language, farm?.lga]);
 
 
   // Vanta init (safe)
@@ -312,7 +363,7 @@ useEffect(() => {
                 });
                 const fetchedW = await wRes.json();
                 setWeather(fetchedW);
-                setCache(weatherKey, fetchedW, 10 * 60 * 1000);
+                setCache(weatherKey, fetchedW);
                 wJson = fetchedW;
               } catch (err) {
                 console.warn("weather fetch failed", err);
@@ -365,12 +416,12 @@ useEffect(() => {
                     const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
                     setAdvice(fullAdvice);
                     storedAdvice = fullAdvice;
-                    setCache(adviceKey, { map, text: fullAdvice }, 10 * 60 * 1000);
+                    setCache(adviceKey, { map, text: fullAdvice });
                   } else {
                     const generated = adJson?.advisory ?? adJson?.advice ?? "";
                     setAdvice(generated);
                     storedAdvice = generated;
-                    setCache(adviceKey, { text: generated }, 10 * 60 * 1000);
+                    setCache(adviceKey, { text: generated });
                   }
                   if (!hadCache) setLoadingAdvice(false);
 
@@ -1114,6 +1165,9 @@ useEffect(() => {
             <div className="bg-white/90 p-4 rounded-2xl shadow space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-green-800">{t("fragility_tab")}</h3>
+                <div className="text-xs text-gray-400">
+                  {fragilityUpdatedAt ? `Last fetched ${formatHHMM(fragilityUpdatedAt)} ${fragilityFromCache ? '(cached)' : ''}` : ''}
+                </div>
                 <div>
                   <button onClick={() => {
                     // refresh fragility
@@ -1122,6 +1176,9 @@ useEffect(() => {
                         const fRes = await fetch('/api/fragility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: farm?.language ?? 'en', lga: farm?.lga ?? '' }) });
                         const fJson = await fRes.json();
                         setFragility(fJson);
+                        setFragilityUpdatedAt(Date.now());
+                        setFragilityFromCache(false);
+                        if (user) setCache(`fragility:${user.uid}:${farm?.language ?? 'en'}:${farm?.lga ?? ''}`, fJson);
                         try {
                           // Save as structured fragility advisory
                           if (user) {
