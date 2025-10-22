@@ -65,6 +65,34 @@ export default function DashboardPage() {
   // const [loadingWeather, setLoadingWeather] = useState(false); // not used
   const [loadingAdvice, setLoadingAdvice] = useState(false);
   const [langModalOpen, setLangModalOpen] = useState(false);
+  // simple client-side cache (in-memory + sessionStorage)
+  const apiCache = useRef<Map<string, { value: unknown; expires: number }>>(new Map());
+  function getCache(key: string) {
+    try {
+      const mem = apiCache.current.get(key);
+      if (mem && mem.expires > Date.now()) return mem.value;
+      const ss = typeof window !== "undefined" ? sessionStorage.getItem(key) : null;
+      if (ss) {
+        const parsed = JSON.parse(ss);
+        if (parsed && parsed.expires > Date.now()) {
+          apiCache.current.set(key, { value: parsed.value, expires: parsed.expires });
+          return parsed.value;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+  function setCache(key: string, value: unknown, ttlMs = 10 * 60 * 1000) {
+    try {
+      const expires = Date.now() + ttlMs;
+      apiCache.current.set(key, { value, expires });
+      if (typeof window !== "undefined") sessionStorage.setItem(key, JSON.stringify({ value, expires }));
+    } catch {
+      // ignore
+    }
+  }
   type WeatherData = {
     current?: {
       temp?: number;
@@ -221,32 +249,9 @@ useEffect(() => {
       // allow UI to render immediately after farmer doc is available
       setLoading(false);
 
-      // Background work: fetch advisories, weather, AI advice and fragility without blocking initial render
+      // Background work: prioritize weather and crop advice (fast perceived load). Fragility will load only when user opens that tab.
       (async () => {
         try {
-          // fetch advisory history (if applicable)
-          if ((data.crops ?? []).length > 0 && missingStages.length === 0) {
-            setHistoryLoading(true);
-            try {
-              const res = await fetchAdvisories(user.uid, 10);
-              if (Array.isArray(res)) {
-                setAdvisories((res as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-                setAdviceLastDoc(null);
-              } else if (res && Array.isArray((res as AdvisoryFetchResult).items)) {
-                const result = res as AdvisoryFetchResult;
-                setAdvisories(result.items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-                setAdviceLastDoc(result.lastDoc ?? null);
-              } else {
-                setAdvisories([]);
-                setAdviceLastDoc(null);
-              }
-            } catch (err) {
-              console.warn("fetchAdvisories error:", err);
-            } finally {
-              setHistoryLoading(false);
-            }
-          }
-
           // get coords (use stored lat/lon if available else Nominatim)
           let lat = (data as FarmerDoc).lat;
           let lon = (data as FarmerDoc).lon;
@@ -268,19 +273,31 @@ useEffect(() => {
             toast.info(t("no_coords") ?? "Location coordinates not available. Please update your location in Settings.");
           } else {
             try {
-              const wRes = await fetch("/api/weather", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ lat, lon }),
-              });
-              const wJson = await wRes.json();
-              setWeather(wJson);
+              // try cache first
+              const weatherKey = `weather:${lat}:${lon}`;
+              let wJson: unknown = getCache(weatherKey);
+              if (wJson) {
+                setWeather(wJson);
+              }
+
+              // fetch fresh weather (background update)
+              try {
+                const wRes = await fetch("/api/weather", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ lat, lon }),
+                });
+                const fetchedW = await wRes.json();
+                setWeather(fetchedW);
+                setCache(weatherKey, fetchedW, 10 * 60 * 1000);
+                wJson = fetchedW;
+              } catch (err) {
+                console.warn("weather fetch failed", err);
+              }
 
               const isSubscribed = accessCodeUsed || (paidAccess && npDate && npDate > new Date());
-              setLoadingAdvice(true);
               if (!isSubscribed) {
                 setAdvice(t("subscription_required") ?? "Your subscription has expired. Please renew to receive advisories.");
-                setLoadingAdvice(false);
               } else if ((data.crops ?? []).length > 0 && missingStages.length === 0) {
                 // Build cropStages object for API
                 const cropStages: Record<string, { stage?: string }> = {};
@@ -288,6 +305,18 @@ useEffect(() => {
                   cropStages[c] = { stage: data.cropStatus?.[c]?.stage ?? "unknown" };
                 });
 
+                // advice cache key should reflect crops, lang and crop stages
+                const adviceKey = `advice:${user.uid}:${data.language ?? 'en'}:${(data.crops ?? []).join('|')}::${JSON.stringify(cropStages)}`;
+                const cachedAdvice = getCache(adviceKey);
+                if (cachedAdvice) {
+                  // cachedAdvice may be structured; try to apply
+                  if (cachedAdvice.map) setCropAdvices(cachedAdvice.map as Record<string, string>);
+                  if (cachedAdvice.text) setAdvice(cachedAdvice.text as string);
+                }
+
+                // fetch fresh advice (background update). Only toggle loadingAdvice if nothing cached
+                const hadCache = Boolean(cachedAdvice);
+                if (!hadCache) setLoadingAdvice(true);
                 try {
                   const adRes = await fetch("/api/advice", {
                     method: "POST",
@@ -310,51 +339,35 @@ useEffect(() => {
                     const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
                     setAdvice(fullAdvice);
                     storedAdvice = fullAdvice;
+                    setCache(adviceKey, { map, text: fullAdvice }, 10 * 60 * 1000);
                   } else {
                     const generated = adJson?.advisory ?? adJson?.advice ?? "";
                     setAdvice(generated);
                     storedAdvice = generated;
+                    setCache(adviceKey, { text: generated }, 10 * 60 * 1000);
                   }
-                  setLoadingAdvice(false);
+                  if (!hadCache) setLoadingAdvice(false);
 
-                  // store advisory in firestore (best effort, ignore errors)
+                  // store advisory in firestore (best effort)
                   try {
-                    await addAdvisory(user.uid, { advice: storedAdvice, weather: wJson, crops: data.crops ?? [] });
+                    await addAdvisory(user.uid, { advice: storedAdvice, weather: wJson as Record<string, unknown> | null, crops: data.crops ?? [] });
+                    // refresh history (optional)
                     const h = await fetchAdvisories(user.uid, 10);
                     if (Array.isArray(h)) {
                       setAdvisories((h as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                      setAdviceLastDoc(null);
                     } else if (h && Array.isArray((h as AdvisoryFetchResult).items)) {
-                      setAdvisories((h as AdvisoryFetchResult).items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
-                    } else {
-                      setAdvisories([]);
+                      const res = h as AdvisoryFetchResult;
+                      setAdvisories(res.items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                      setAdviceLastDoc(res.lastDoc ?? null);
                     }
                   } catch (err) {
                     console.warn("saving advisory failed", err);
                   }
                 } catch (err) {
                   console.warn("advice fetch failed", err);
-                  setLoadingAdvice(false);
+                  if (!hadCache) setLoadingAdvice(false);
                 }
-              }
-
-              // fragility advisory (best-effort)
-              try {
-                const fRes = await fetch("/api/fragility", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ lang: data.language ?? "en", lga: data.lga ?? "" }),
-                });
-                const fJson = await fRes.json();
-                setFragility(fJson);
-                try {
-                  await addFragilityAdvisory(user.uid, { header: fJson.header ?? "Fragility advisory", sections: Array.isArray(fJson.sections) ? fJson.sections : [], weather: wJson });
-                  const fh = await fetchFragilityAdvisories(user.uid, 10);
-                  if (Array.isArray(fh)) setFragilityHistory(fh as FragilityResp[]);
-                } catch (e) {
-                  console.warn("persisting fragility failed", e);
-                }
-              } catch (e) {
-                console.warn("fragility fetch failed", e);
               }
             } catch (err) {
               console.warn("weather/advice flow failed", err);
