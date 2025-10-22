@@ -363,8 +363,15 @@ useEffect(() => {
                 });
                 const fetchedW = await wRes.json();
                 setWeather(fetchedW);
+                const fetchedTime = Date.now();
                 setCache(weatherKey, fetchedW);
+                setWeatherUpdatedAt(fetchedTime);
+                setWeatherFromCache(false);
                 wJson = fetchedW;
+                // notify if we replaced cached data
+                if (wCachedTime) {
+                  try { toast.info(`Weather updated ${formatHHMM(fetchedTime)}`); } catch {}
+                }
               } catch (err) {
                 console.warn("weather fetch failed", err);
               }
@@ -416,12 +423,24 @@ useEffect(() => {
                     const fullAdvice = resp.header ? `${resp.header}\n\n${joined}` : joined;
                     setAdvice(fullAdvice);
                     storedAdvice = fullAdvice;
+                    const fetchedTime = Date.now();
                     setCache(adviceKey, { map, text: fullAdvice });
+                    setAdviceUpdatedAt(fetchedTime);
+                    setAdviceFromCache(false);
+                    if (adviceCachedTime) {
+                      try { toast.info(`Advice updated ${formatHHMM(fetchedTime)}`); } catch {}
+                    }
                   } else {
                     const generated = adJson?.advisory ?? adJson?.advice ?? "";
                     setAdvice(generated);
                     storedAdvice = generated;
+                    const fetchedTime = Date.now();
                     setCache(adviceKey, { text: generated });
+                    setAdviceUpdatedAt(fetchedTime);
+                    setAdviceFromCache(false);
+                    if (adviceCachedTime) {
+                      try { toast.info(`Advice updated ${formatHHMM(fetchedTime)}`); } catch {}
+                    }
                   }
                   if (!hadCache) setLoadingAdvice(false);
 
