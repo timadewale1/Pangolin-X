@@ -66,18 +66,33 @@ export default function DashboardPage() {
   const [loadingAdvice, setLoadingAdvice] = useState(false);
   const [langModalOpen, setLangModalOpen] = useState(false);
   // simple client-side cache (in-memory + sessionStorage)
-  const apiCache = useRef<Map<string, { value: unknown; expires: number }>>(new Map());
+  type CacheEntry = { value: unknown; expires: number; storedAt?: number };
+  const apiCache = useRef<Map<string, CacheEntry>>(new Map());
   function getCache(key: string) {
     try {
       const mem = apiCache.current.get(key);
       if (mem && mem.expires > Date.now()) return mem.value;
       const ss = typeof window !== "undefined" ? sessionStorage.getItem(key) : null;
       if (ss) {
-        const parsed = JSON.parse(ss);
-        if (parsed && parsed.expires > Date.now()) {
-          apiCache.current.set(key, { value: parsed.value, expires: parsed.expires });
+        const parsed = JSON.parse(ss) as { value?: unknown; expires?: number; storedAt?: number } | null;
+        if (parsed && parsed.expires && parsed.expires > Date.now()) {
+          apiCache.current.set(key, { value: parsed.value, expires: parsed.expires, storedAt: parsed.storedAt });
           return parsed.value;
         }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+  function getCacheTime(key: string) {
+    try {
+      const mem = apiCache.current.get(key);
+      if (mem && mem.storedAt) return mem.storedAt;
+      const ss = typeof window !== "undefined" ? sessionStorage.getItem(key) : null;
+      if (ss) {
+        const parsed = JSON.parse(ss) as { storedAt?: number } | null;
+        if (parsed && parsed.storedAt) return parsed.storedAt;
       }
     } catch {
       // ignore
@@ -87,8 +102,9 @@ export default function DashboardPage() {
   function setCache(key: string, value: unknown, ttlMs = 10 * 60 * 1000) {
     try {
       const expires = Date.now() + ttlMs;
-      apiCache.current.set(key, { value, expires });
-      if (typeof window !== "undefined") sessionStorage.setItem(key, JSON.stringify({ value, expires }));
+      const storedAt = Date.now();
+      apiCache.current.set(key, { value, expires, storedAt });
+      if (typeof window !== "undefined") sessionStorage.setItem(key, JSON.stringify({ value, expires, storedAt }));
     } catch {
       // ignore
     }
@@ -144,6 +160,10 @@ export default function DashboardPage() {
   const [subscriptionActive, setSubscriptionActive] = useState<boolean>(false);
   const [nextPaymentDate, setNextPaymentDate] = useState<Date | null>(null);
   const [planLabel, setPlanLabel] = useState<string | null>(null);
+  const [weatherUpdatedAt, setWeatherUpdatedAt] = useState<number | null>(null);
+  const [adviceUpdatedAt, setAdviceUpdatedAt] = useState<number | null>(null);
+  const [weatherFromCache, setWeatherFromCache] = useState(false);
+  const [adviceFromCache, setAdviceFromCache] = useState(false);
   const [renewalOpen, setRenewalOpen] = useState(false);
   const [fragilityHistory, setFragilityHistory] = useState<FragilityResp[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -276,8 +296,11 @@ useEffect(() => {
               // try cache first
               const weatherKey = `weather:${lat}:${lon}`;
               let wJson: unknown = getCache(weatherKey);
+              const wCachedTime = getCacheTime(weatherKey);
               if (wJson) {
-                setWeather(wJson);
+                setWeather(wJson as WeatherData);
+                setWeatherUpdatedAt(wCachedTime ?? Date.now());
+                setWeatherFromCache(true);
               }
 
               // fetch fresh weather (background update)
@@ -308,10 +331,13 @@ useEffect(() => {
                 // advice cache key should reflect crops, lang and crop stages
                 const adviceKey = `advice:${user.uid}:${data.language ?? 'en'}:${(data.crops ?? []).join('|')}::${JSON.stringify(cropStages)}`;
                 const cachedAdvice = getCache(adviceKey);
-                if (cachedAdvice) {
-                  // cachedAdvice may be structured; try to apply
-                  if (cachedAdvice.map) setCropAdvices(cachedAdvice.map as Record<string, string>);
-                  if (cachedAdvice.text) setAdvice(cachedAdvice.text as string);
+                const adviceCachedTime = getCacheTime(adviceKey);
+                if (cachedAdvice && typeof cachedAdvice === 'object' && cachedAdvice !== null) {
+                  const cadv = cachedAdvice as { map?: Record<string, string>; text?: string };
+                  if (cadv.map) setCropAdvices(cadv.map);
+                  if (cadv.text) setAdvice(cadv.text);
+                  setAdviceUpdatedAt(adviceCachedTime ?? Date.now());
+                  setAdviceFromCache(true);
                 }
 
                 // fetch fresh advice (background update). Only toggle loadingAdvice if nothing cached
@@ -991,6 +1017,7 @@ useEffect(() => {
                             {weather?.current?.temp ?? weather?.main?.temp ?? "N/A"}°C
                           </div>
                           <div className="text-xs text-gray-500 w-full">{t("feels_like")}: {weather?.current?.feels_like ?? weather?.main?.feels_like ?? "N/A"}°C</div>
+                          <div className="text-xs text-gray-400 mt-2">{weatherUpdatedAt ? `${Math.max(0, Math.floor((Date.now() - weatherUpdatedAt)/60000))}m ago` : ''} {weatherFromCache ? '(cached)' : ''}</div>
                         </div>
                         <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-50 to-white border flex flex-col items-start gap-2">
                           <div className="flex items-center gap-2 w-full">
@@ -1066,7 +1093,8 @@ useEffect(() => {
                               // Show a single general advice block when no per-crop items exist
                               <div className="p-3 border rounded-lg">
                                 <div className="font-semibold text-green-800">{t('general_advice') ?? 'Latest advice'}</div>
-                                <div className="mt-2 text-gray-700 whitespace-pre-line">{advice || t("no_advice_available")}</div>
+                                  <div className="mt-2 text-gray-700 whitespace-pre-line">{advice || t("no_advice_available")}</div>
+                                  <div className="text-xs text-gray-400 mt-2">{adviceUpdatedAt ? `${Math.max(0, Math.floor((Date.now() - adviceUpdatedAt)/60000))}m ago` : ''} {adviceFromCache ? '(cached)' : ''}</div>
                               </div>
                             )
                           )
