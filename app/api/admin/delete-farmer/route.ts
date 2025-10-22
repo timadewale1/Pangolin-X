@@ -1,33 +1,7 @@
 import { NextResponse } from "next/server";
-import admin from "firebase-admin";
+import { adminDB, adminAuth } from '@/lib/firebaseAdmin';
 
-if (!admin.apps.length) {
-  try {
-    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
-    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
-    const serviceAccount = JSON.parse(keyRaw);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
-    });
-  } catch (err) {
-    console.error("Failed to initialize firebase-admin (delete-farmer):", err);
-  }
-}
-
-if (!admin.apps.length) {
-  try {
-    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
-    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
-    const serviceAccount = JSON.parse(keyRaw);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
-    });
-  } catch (err) {
-    console.error("Failed to initialize firebase-admin (delete-farmer):", err);
-  }
-}
-
-const db = admin.firestore();
+const db = adminDB;
 
 export async function POST(req: Request) {
   try {
@@ -46,7 +20,7 @@ export async function POST(req: Request) {
     // Attempt to delete the Firebase Auth user first. If the user doesn't exist,
     // continue and still attempt to remove the Firestore document.
     try {
-      await admin.auth().deleteUser(uid);
+      await adminAuth.deleteUser(uid);
       result.authDeleted = true;
     } catch (err: unknown) {
       // If the user wasn't found, that's fine — we'll still try to delete the doc.

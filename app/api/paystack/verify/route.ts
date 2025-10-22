@@ -2,7 +2,7 @@
 console.log("[paystack/verify] Route file loaded successfully");
 import { NextResponse } from "next/server";
 import { headers } from 'next/headers';
-import admin from "firebase-admin";
+import { adminDB, adminAuth } from '@/lib/firebaseAdmin';
 
 
 // // Default handler for unsupported methods
@@ -59,24 +59,8 @@ const planPrices: Record<PlanType, number> = {
   yearly: 15000
 };
 
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  try {
-    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
-    if (!keyRaw) {
-      console.warn('Missing SERVICE_ACCOUNT_KEY — skipping Firebase Admin init');
-    } else {
-      const serviceAccount = JSON.parse(keyRaw);
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
-      });
-    }
-  } catch (err) {
-    console.error("Failed to init firebase-admin (paystack verify):", err);
-  }
-}
-
-const db = admin.firestore();
+// Use centralized firebase-admin initialization from `lib/firebaseAdmin`
+const db = adminDB;
 
 // Helper: Create response with CORS headers
 function createResponse(
@@ -206,7 +190,7 @@ export async function POST(req: Request) {
     let farmerUid: string | null = null;
     if (email) {
       try {
-        const { users } = await admin.auth().getUsers([{ email }]);
+        const { users } = await adminAuth.getUsers([{ email }]);
         if (users?.[0]?.uid) farmerUid = users[0].uid;
       } catch (e) {
         console.warn('Auth lookup failed:', e);

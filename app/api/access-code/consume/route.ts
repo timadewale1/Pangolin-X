@@ -1,23 +1,7 @@
 import { NextResponse } from "next/server";
-import admin from "firebase-admin";
-import { readFileSync } from "fs";
-import path from "path";
+import { adminDB } from '@/lib/firebaseAdmin';
 
-
-if (!admin.apps.length) {
-  try {
-    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
-    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
-    const serviceAccount = JSON.parse(keyRaw);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
-    });
-  } catch (err) {
-    console.error("Failed to initialize firebase-admin (consume):", err);
-  }
-}
-
-const db = admin.firestore();
+const db = adminDB;
 const VALID_CODE = "PANGOLIN-X";
 
 export async function POST(req: Request) {
