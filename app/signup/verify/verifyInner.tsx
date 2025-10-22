@@ -48,7 +48,7 @@ export default function VerifyPaymentPageInner() {
         console.log("Verification result:", data);
 
         // ✅ Simplified success check
-        if (data.success) {
+if (data.success === true || data.success === "true") {
           const storedData = localStorage.getItem("pangolin-signup-data");
           if (!storedData) {
             setError("Missing signup data");
