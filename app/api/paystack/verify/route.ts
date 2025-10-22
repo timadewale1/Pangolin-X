@@ -1,3 +1,13 @@
+// Default handler for unsupported methods
+export function GET() {
+  return new NextResponse(JSON.stringify({ success: false, message: 'Method Not Allowed' }), {
+    status: 405,
+    headers: {
+      'Allow': 'POST, OPTIONS',
+      'Content-Type': 'application/json',
+    },
+  });
+}
 
 import { NextResponse } from "next/server";
 import { headers } from 'next/headers';

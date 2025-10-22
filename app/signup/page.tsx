@@ -244,12 +244,13 @@ export default function SignupPage() {
       }
 
       // Validate selectedPackage
-      if (selectedPackage !== 'monthly' && selectedPackage !== 'yearly') {
+      const pkg = selectedPackage === 'monthly' || selectedPackage === 'yearly' ? selectedPackage : 'monthly';
+      if (!pkg) {
         toast.error('Please select a valid package (monthly or yearly)');
         setLocalLoading(false);
         return;
       }
-      console.log('Selected package before payment:', selectedPackage);
+      console.log('Selected package before payment:', pkg);
 
       // If user entered an access code but didn't blur/validate, validate it now
       if (accessCode && accessCode.length === ACCESS_CODE_LENGTH && !accessCodeValid) {
@@ -285,7 +286,7 @@ export default function SignupPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             email: formState.email, 
-            pkg: selectedPackage,
+            pkg,
             metadata: { source: 'signup' }
           })
         });
@@ -347,7 +348,7 @@ export default function SignupPage() {
 
         // Open paystack inline modal
         const reference = payData.data.reference || payData.data.access_code || String(Date.now());
-        const amount = payData.data.amount;
+        const amount = payData?.data?.amount;
         if (!amount || typeof amount !== 'number' || amount <= 0) {
           toast.error('Invalid package price. Please select a valid plan.');
           setLocalLoading(false);
@@ -384,7 +385,7 @@ export default function SignupPage() {
                     });
                     const vdata = await vr.json();
 
-                    if (vr.ok && vdata.data && vdata.data.status === 'success') {
+                    if (vr.ok && vdata.data && (vdata.data.status === 'success' || vdata.data.status === 'SUCCESS')) {
                       // ✅ Proceed to create user now (payment verified)
                       try {
                         const create = await createUserWithEmailAndPassword(
@@ -401,12 +402,12 @@ export default function SignupPage() {
                           state: formState.state,
                           lga: formState.lga,
                           crops: formState.crops,
-                          language: formState.language ?? 'en',
-                          title: formState.title ?? '',
+                          language: (formState && formState.language) ? formState.language : 'en',
+                          title: (formState && formState.title) ? formState.title : '',
                           createdAt: new Date().toISOString(),
                           paidAccess: true,
                           paymentDate: new Date().toISOString(),
-                          plan: selectedPackage ?? null,
+                          plan: pkg ?? null,
                           accessCodeUsed: false,
                         });
 
@@ -447,12 +448,12 @@ export default function SignupPage() {
         state: formState.state,
         lga: formState.lga,
         crops: formState.crops,
-        language: formState.language ?? "en",
-        title: formState.title ?? "",
+        language: (formState && formState.language) ? formState.language : "en",
+        title: (formState && formState.title) ? formState.title : "",
         createdAt: new Date().toISOString(),
         paidAccess: true,
         paymentDate: new Date().toISOString(),
-        plan: paymentSuccessReturn ? (selectedPackage ?? null) : null,
+        plan: paymentSuccessReturn ? (pkg ?? null) : null,
         accessCodeUsed: accessCodeValid ? true : false,
       });
 
