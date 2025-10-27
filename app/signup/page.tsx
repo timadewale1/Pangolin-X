@@ -31,6 +31,8 @@ type FormData = {
   crops: string[]; // array of crop ids
   language?: string;
   title?: string;
+  acceptedTerms: boolean;
+  acceptedPrivacy: boolean;
 };
 
 //   { id: "rice", label: "Rice", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=600&auto=format&fit=crop" },
@@ -77,6 +79,8 @@ export default function SignupPage() {
     crops: [],
     language: "en",
     title: "",
+    acceptedTerms: false,
+    acceptedPrivacy: false,
   });
 
   const [accessCode, setAccessCode] = useState("");
@@ -233,9 +237,15 @@ export default function SignupPage() {
     try {
       setLocalLoading(true);
 
-      // Validate email regardless of payment/access code
+      // Validate email and agreement to terms
       if (!formState.email || !formState.email.includes('@')) {
         toast.error('Please enter a valid email');
+        setLocalLoading(false);
+        return;
+      }
+
+      if (!formState.acceptedTerms || !formState.acceptedPrivacy) {
+        toast.error('You must accept the Terms and Conditions and Privacy Policy to create an account');
         setLocalLoading(false);
         return;
       }
@@ -743,8 +753,44 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
               </div>
             )}
 
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="terms"
+                  className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  checked={formState.acceptedTerms}
+                  onChange={(e) => setFormState({ ...formState, acceptedTerms: e.target.checked })}
+                  required
+                />
+                <label htmlFor="terms" className="text-sm text-gray-700">
+                  I agree to the <a href="/legal/terms" target="_blank" className="text-green-600 underline">Terms and Conditions</a>
+                </label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="privacy"
+                  className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  checked={formState.acceptedPrivacy}
+                  onChange={(e) => setFormState({ ...formState, acceptedPrivacy: e.target.checked })}
+                  required
+                />
+                <label htmlFor="privacy" className="text-sm text-gray-700">
+                  I agree to the <a href="/legal/privacy" target="_blank" className="text-green-600 underline">Privacy Policy</a>
+                </label>
+              </div>
+            </div>
+
             <div className="mt-4">
-              <button type="submit" className="w-full bg-green-600 text-white p-2 rounded font-semibold">Create account</button>
+              <button 
+                type="submit" 
+                className="w-full bg-green-600 text-white p-2 rounded font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={!formState.acceptedTerms || !formState.acceptedPrivacy}
+              >
+                Create account
+              </button>
             </div>
 
             <div className="text-sm text-center mt-3">

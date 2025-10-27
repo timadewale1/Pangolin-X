@@ -231,6 +231,8 @@ export default function Home() {
               <li><a href="#how-it-works">How It Works</a></li>
               <li><a href="#features">Features</a></li>
               <li><a href="/signup">Sign Up</a></li>
+              <li><a href="/legal/terms">Terms and Conditions</a></li>
+              <li><a href="/legal/privacy">Privacy Policy</a></li>
             </ul>
           </div>
           <div>
