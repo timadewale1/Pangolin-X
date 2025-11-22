@@ -32,7 +32,7 @@ export async function fetchNigeriaData() {
       });
     }
     return map;
-  } catch (err) {
+  } catch {
     return NIGERIA_STATES_LGAS;
   }
 }

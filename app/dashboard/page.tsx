@@ -25,7 +25,7 @@ import CropEditorModal from "@/components/CropEditorModal";
 import CropDetailModal from "@/components/CropDetailModal";
 import CropStageModal from "@/components/CropStageModal";
 import { CROP_OPTIONS } from "@/lib/crops";
-import { addAdvisory, fetchAdvisories, updateFarmerCrops, updateFarmerCropStatus, addFragilityAdvisory, fetchFragilityAdvisories } from "@/lib/firestore";
+import { addAdvisory, fetchAdvisories, updateFarmerCrops, updateFarmerCropStatus, addFragilityAdvisory, fetchFragilityAdvisories, fetchForecastAdvisories, addForecastAdvisory, ForecastAdvisoryData } from "@/lib/firestore";
 import { auth, db, storage } from "@/lib/firebase";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
@@ -35,6 +35,7 @@ import LanguageButton from "@/components/LanguageButton";
 import FragilityDetailModal from "@/components/FragilityDetailModal";
 import { useLanguage } from "@/context/LanguageContext";
 import RenewalModal from "@/components/ui/RenewalModal";
+import { NIGERIA_STATES_LGAS } from '@/lib/nigeriaData';
 // image is served from /Pangolin-x.jpg in the public folder; reference it directly in <Image src="/Pangolin-x.jpg" ... />
 // ...existing code...
 
@@ -42,16 +43,19 @@ type FarmerDoc = {
   name?: string;
   email?: string;
   phone?: string;
-  state?: string;
-  lga?: string;
+  state?: string | null;
+  lga?: string | null;
   crops?: string[];
   title?: string;
   language?: string;
-  lat?: number;
-  lon?: number;
+  lat?: number | null;
+  lon?: number | null;
   cropStatus?: Record<string, { stage?: string; plantedAt?: string }>;
   photoURL?: string;
   accessCodeUsed?: boolean;
+  // Soil data fetched from SoilGrids (optional)
+  soil?: unknown;
+  soilSummary?: string | null;
 };
 
 export default function DashboardPage() {
@@ -129,13 +133,157 @@ export default function DashboardPage() {
   };
 
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [forecastDays, setForecastDays] = useState<number>(3);
+  type ForecastDay = {
+    dt: number;
+    temp: {
+      min?: number;
+      max?: number;
+      day?: number;
+      night?: number;
+    };
+    weather: Array<{
+      description?: string;
+      main?: string;
+      id?: number;
+    }>;
+    humidity?: number;
+    pressure?: number;
+    wind_speed?: number;
+  };
+  const [forecast, setForecast] = useState<ForecastDay[] | null>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState<string | null>(null);
+  // helper: fetch forecast for given days and update state (used by auto-load and manual buttons)
+  async function fetchForecastForDays(days?: number) {
+    const d = days ?? forecastDays ?? 3;
+    if (!farm?.lat || !farm?.lon) {
+      setForecastError(t('no_coords') ?? 'Location coordinates not available');
+      setForecast(null);
+      return;
+    }
+    setForecastLoading(true);
+    setForecastError(null);
+    try {
+      const res = await fetch('/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat: farm.lat, lon: farm.lon, days: d }) });
+      const j = await res.json();
+      if (!res.ok) {
+        setForecast(null);
+        setForecastError(j?.error || 'Failed to fetch forecast');
+      } else {
+        if (Array.isArray(j.daily)) setForecast(j.daily.slice(0, Math.min(d, 8)));
+        else if (Array.isArray(j)) setForecast(j.slice(0, Math.min(d, 8)));
+        else setForecast(null);
+        // reset selected day/advice when we load new forecast
+        setSelectedForecastDay(null);
+        setForecastAdvice("");
+      }
+    } catch (err) {
+      setForecastError(String(err));
+      setForecast(null);
+    } finally {
+      setForecastLoading(false);
+    }
+  }
+
+  // Fetch soil summary using server-side proxy and optionally persist to Firestore
+  async function fetchSoilSummary(lat?: number, lon?: number, saveToFarm = true) {
+    if (!lat || !lon) return null;
+    try {
+      const key = `soil:${lat}:${lon}`;
+      const cached = getCache(key);
+      if (cached) {
+        // apply to farm state
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setFarm((f) => (f ? { ...f, soil: (cached as any), soilSummary: (cached as any).summary ?? (f.soilSummary ?? null) } : f));
+        return cached as unknown;
+      }
+
+      // call server-side proxy that wraps SoilGrids and implements caching
+      const res = await fetch('/api/soilgrids', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lon }) });
+      if (!res.ok) {
+        console.warn('soil proxy returned error', res.status);
+        return null;
+      }
+      const result = await res.json();
+      const summary = result?.summary ?? (result?.classification?.classes?.[0]?.name ?? 'Unknown soil');
+      const out = { summary, classification: result?.classification ?? null, properties: result?.properties ?? null };
+      setCache(key, out, 24 * 60 * 60 * 1000);
+      // update local farm state
+      setFarm((f) => (f ? { ...f, soil: out, soilSummary: out.summary } : f));
+
+      // optionally persist to farmer doc in firestore
+      if (saveToFarm && user) {
+        try {
+          const fRef = doc(db, 'farmers', user.uid);
+          await updateDoc(fRef, { soil: out, soilSummary: out.summary });
+        } catch (e) {
+          console.warn('failed to persist soil to farmer doc', e);
+        }
+      }
+      return out;
+    } catch (err) {
+      console.warn('fetchSoilSummary error', err);
+      return null;
+    }
+  }
   const [advice, setAdvice] = useState<string>("");
+  const [selectedForecastDay, setSelectedForecastDay] = useState<ForecastDay | null>(null);
+  const [forecastAdvice, setForecastAdvice] = useState<string>("");
+  const [loadingForecastAdvice, setLoadingForecastAdvice] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "history" | "crops" | "settings" | "fragility" | "fragility_history" | "forecast_advisory">("overview");
+  
+  // Forecast history state with proper typing
+  type ForecastHistoryEntry = ForecastAdvisoryData & { id: string };
+  type GroupedForecastHistory = Record<string, ForecastHistoryEntry[]>;
+  // forecastHistory is populated for background use but currently not read directly in the UI
+  // keep the setter to allow background fetches without triggering an unused-variable TS error
+  const [, setForecastHistory] = useState<GroupedForecastHistory | null>(null);
+
+  // Load forecast history when active tab changes or forecast is selected
+  useEffect(() => {
+    if (activeTab !== 'forecast_advisory' || !user) return;
+    
+    const fromDate = new Date();
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date();
+    toDate.setDate(toDate.getDate() + 30); // Show next 30 days
+    
+    // Fetch forecast advisories
+    (async () => {
+      try {
+        const advisories = await fetchForecastAdvisories(user.uid, fromDate, toDate);
+        // Group by date
+        const grouped = advisories.reduce((acc, advisory) => {
+          const date = new Date(advisory.forecastDate).toISOString().split('T')[0];
+          if (!acc[date]) acc[date] = [];
+          acc[date].push(advisory);
+          return acc;
+        }, {} as GroupedForecastHistory);
+        setForecastHistory(grouped);
+      } catch (err) {
+        console.warn("Failed to fetch forecast history:", err);
+      }
+    })();
+  }, [activeTab, user, selectedForecastDay]);
+
+  // Auto-load forecast when forecastDays or farm coordinates change
+  useEffect(() => {
+    // don't attempt until farm coords are available
+    if (!farm?.lat || !farm?.lon) return;
+    // fetch forecast for the selected number of days
+    fetchForecastForDays(forecastDays).catch((e) => console.warn('auto forecast fetch failed', e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forecastDays, farm?.lat, farm?.lon]);
+
   // map of cropId -> advice string returned from API
   const [cropAdvices, setCropAdvices] = useState<Record<string, string>>({});
   // Advisory type
   type Advisory = {
     id: string;
-    advice: string;
+    // server may return either `advice` or `advisory` fields depending on older/newer documents
+    advice?: string;
+    advisory?: string;
     crops: string[];
     createdAt: string | Date | {
       seconds: number;
@@ -167,10 +315,14 @@ export default function DashboardPage() {
   const [fragilityUpdatedAt, setFragilityUpdatedAt] = useState<number | null>(null);
   const [fragilityFromCache, setFragilityFromCache] = useState(false);
   const [renewalOpen, setRenewalOpen] = useState(false);
+  // location editing state for Settings tab
+  const [locationEditing, setLocationEditing] = useState(false);
+  const [editState, setEditState] = useState<string>("");
+  const [editLga, setEditLga] = useState<string>("");
+  const [locationSaving, setLocationSaving] = useState(false);
   const [fragilityHistory, setFragilityHistory] = useState<FragilityResp[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [adviceLastDoc, setAdviceLastDoc] = useState<unknown>(null); // Firestore doc snapshot
-  const [activeTab, setActiveTab] = useState<"overview" | "history" | "crops" | "settings" | "fragility" | "fragility_history">("overview");
   const [cropModalOpen, setCropModalOpen] = useState(false);
 
   // Stage modal enforcement
@@ -218,7 +370,7 @@ export default function DashboardPage() {
         setFragilityFromCache(true);
       }
       try {
-        const fRes = await fetch('/api/fragility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: farm?.language ?? 'en', lga: farm?.lga ?? '' }) });
+                const fRes = await fetch('/api/fragility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: lang ?? farm?.language ?? 'en', lga: farm?.lga ?? '' }) });
         const fJson = await fRes.json();
         setFragility(fJson);
         setFragilityFromCache(false);
@@ -237,7 +389,7 @@ export default function DashboardPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, user, farm?.language, farm?.lga]);
+  }, [activeTab, user, farm?.language, farm?.lga, lang]);
 
 
   // Vanta init (safe)
@@ -334,6 +486,8 @@ useEffect(() => {
               if (geoArr && geoArr[0]) {
                 lat = parseFloat(geoArr[0].lat);
                 lon = parseFloat(geoArr[0].lon);
+                // persist resolved coordinates into farmer state so other UI actions can use them
+                setFarm((f) => (f ? { ...f, lat, lon } : f));
               }
             } catch (err) {
               console.warn("Geocode failed", err);
@@ -354,7 +508,7 @@ useEffect(() => {
                 setWeatherFromCache(true);
               }
 
-              // fetch fresh weather (background update)
+                // fetch fresh weather (background update)
               try {
                 const wRes = await fetch("/api/weather", {
                   method: "POST",
@@ -368,6 +522,30 @@ useEffect(() => {
                 setWeatherUpdatedAt(fetchedTime);
                 setWeatherFromCache(false);
                 wJson = fetchedW;
+                  // Also fetch a short-range forecast for the dashboard preview (default days)
+                  try {
+                    const daysForPreview = Math.min(forecastDays || 3, 8);
+                    if (daysForPreview > 1) {
+                      const fRes = await fetch('/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lon, days: daysForPreview }) });
+                      const fj = await fRes.json();
+                      if (Array.isArray(fj.daily)) setForecast(fj.daily.slice(0, daysForPreview));
+                      else if (Array.isArray(fj)) setForecast(fj.slice(0, daysForPreview));
+                    }
+                  } catch (e) {
+                    console.warn('preview forecast fetch failed', e);
+                  }
+                  
+                  // fetch soil summary if farmer doc lacks it (best-effort)
+                  try {
+                    if (lat && lon && (!data.soilSummary || !data.soil)) {
+                      await fetchSoilSummary(lat, lon, true);
+                    } else if (data.soilSummary || data.soil) {
+                      // ensure local farm state picks up persisted soil
+                      setFarm((f) => (f ? { ...f, soil: data.soil ?? f.soil, soilSummary: data.soilSummary ?? f.soilSummary } : f));
+                    }
+                  } catch (e) {
+                    console.warn('soil summary background fetch failed', e);
+                  }
                 // notify if we replaced cached data
                 if (wCachedTime) {
                   try { toast.info(`Weather updated ${formatHHMM(fetchedTime)}`); } catch {}
@@ -405,7 +583,7 @@ useEffect(() => {
                   const adRes = await fetch("/api/advice", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ crops: data.crops ?? [], weather: wJson, lang: data.language ?? "en", cropStages }),
+                    body: JSON.stringify({ crops: data.crops ?? [], weather: wJson, lang: lang ?? data.language ?? "en", cropStages, state: data.state ?? null, lga: data.lga ?? null, soilSummary: data.soilSummary ?? null, soil: data.soil ?? null }),
                   });
                   const adJson = await adRes.json();
                   let storedAdvice = "";
@@ -450,11 +628,11 @@ useEffect(() => {
                     // refresh history (optional)
                     const h = await fetchAdvisories(user.uid, 10);
                     if (Array.isArray(h)) {
-                      setAdvisories((h as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                      setAdvisories((h as Advisory[]).filter((a) => typeof (a.advice ?? a.advisory) === "string"));
                       setAdviceLastDoc(null);
                     } else if (h && Array.isArray((h as AdvisoryFetchResult).items)) {
                       const res = h as AdvisoryFetchResult;
-                      setAdvisories(res.items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+                      setAdvisories(res.items.filter((a: Advisory) => typeof (a.advice ?? a.advisory) === "string"));
                       setAdviceLastDoc(res.lastDoc ?? null);
                     }
                   } catch (err) {
@@ -518,11 +696,11 @@ useEffect(() => {
       (farm.crops ?? []).forEach((c: string) => {
         cropStages[c] = { stage: farm.cropStatus?.[c]?.stage ?? "unknown" };
       });
-      const adRes = await fetch("/api/advice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ crops: farm.crops ?? [], weather: wJson, lang: farm.language ?? "en", cropStages }),
-      });
+  const adRes = await fetch("/api/advice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ crops: farm.crops ?? [], weather: wJson, lang: lang ?? farm?.language ?? "en", cropStages, state: farm?.state ?? null, lga: farm?.lga ?? null, soilSummary: farm?.soilSummary ?? null, soil: farm?.soil ?? null }),
+  });
       const adJson = await adRes.json();
       let storedAdvice = "";
       if (adJson && Array.isArray(adJson.items)) {
@@ -550,9 +728,9 @@ useEffect(() => {
         await addAdvisory(user!.uid, { advice: storedAdvice, weather: wJson, crops: farm.crops ?? [] });
         const h = await fetchAdvisories(user!.uid, 10);
         if (Array.isArray(h)) {
-          setAdvisories((h as Advisory[]).filter((a) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+          setAdvisories((h as Advisory[]).filter((a) => typeof (a.advice ?? a.advisory) === "string"));
         } else if (h && Array.isArray((h as AdvisoryFetchResult).items)) {
-          setAdvisories((h as AdvisoryFetchResult).items.filter((a: Advisory) => typeof a.advice === "string" && Array.isArray(a.crops) && a.createdAt !== undefined));
+          setAdvisories((h as AdvisoryFetchResult).items.filter((a: Advisory) => typeof (a.advice ?? a.advisory) === "string"));
         } else {
           setAdvisories([]);
         }
@@ -561,8 +739,73 @@ useEffect(() => {
       setLoadingAdvice(false);
     }
   })();
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [farm?.language]);
+}, [farm, lang, subscriptionActive, user]);
+
+// Auto-generate forecast advisory when selectedForecastDay or language changes
+useEffect(() => {
+  if (!selectedForecastDay || !farm || !subscriptionActive) return;
+  (async () => {
+    setLoadingForecastAdvice(true);
+    try {
+      const cropStages: Record<string, { stage?: string }> = {};
+      (farm.crops ?? []).forEach((c) => {
+        cropStages[c] = { stage: farm.cropStatus?.[c]?.stage ?? "unknown" };
+      });
+
+      const body = {
+        crops: farm.crops ?? [],
+        weather: selectedForecastDay,
+        lang: lang ?? farm?.language ?? "en",
+        cropStages,
+        forecastDate: (selectedForecastDay && typeof selectedForecastDay.dt === "number") ? new Date(selectedForecastDay.dt * 1000).toISOString() : undefined,
+        state: farm?.state ?? null,
+        lga: farm?.lga ?? null,
+        soilSummary: farm?.soilSummary ?? null,
+        soil: farm?.soil ?? null,
+      } as Record<string, unknown>;
+
+      const res = await fetch("/api/advice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data && Array.isArray(data.items)) {
+        const dtStr = selectedForecastDay ? new Date(selectedForecastDay.dt * 1000).toLocaleDateString() : '';
+        const min = selectedForecastDay ? (selectedForecastDay.temp?.min ?? selectedForecastDay.temp?.night ?? '-') : '-';
+        const max = selectedForecastDay ? (selectedForecastDay.temp?.max ?? selectedForecastDay.temp?.day ?? '-') : '-';
+        const desc = selectedForecastDay ? (selectedForecastDay.weather?.[0]?.description ?? '-') : '-';
+
+        const joined = (data.items as { crop: string; advice: string }[]).map((it, i) => {
+          const cropName = it.crop || '';
+          const directStage = farm?.cropStatus && Object.prototype.hasOwnProperty.call(farm.cropStatus, cropName) ? farm.cropStatus[cropName]?.stage : undefined;
+          const lcStage = farm?.cropStatus && cropName ? farm.cropStatus[cropName.toLowerCase()]?.stage : undefined;
+          const stage = directStage ?? lcStage ?? 'unknown';
+          return `${i + 1}. Weather for ${dtStr}: ${desc} — ${min}°/${max}°C. Your ${cropName} is at ${stage}. Recommendation: ${it.advice}`;
+        }).join('\n\n');
+
+        const adviceText = data.header ? `${data.header}\n\n${joined}` : joined;
+        setForecastAdvice(adviceText);
+        // persist forecast advisory (best-effort)
+        try {
+          if (user) {
+            await addForecastAdvisory(user.uid, {
+              forecastDate: (selectedForecastDay && typeof selectedForecastDay.dt === "number") ? new Date(selectedForecastDay.dt * 1000).toISOString() : '',
+              advice: adviceText,
+              forecastWeather: selectedForecastDay,
+              crops: farm?.crops ?? [],
+            });
+          }
+        } catch (e) {
+          console.warn('persisting forecast advisory failed', e);
+        }
+      } else {
+        setForecastAdvice(data?.advisory ?? data?.advice ?? "No forecast advisory available");
+      }
+    } catch (err) {
+      console.error("Auto forecast advice error:", err);
+    } finally {
+      setLoadingForecastAdvice(false);
+    }
+  })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [selectedForecastDay, lang]);
 
 // live timer refresh every 30s to cause re-render of remaining time
 useEffect(() => {
@@ -617,7 +860,7 @@ useEffect(() => {
         const fRes = await fetch('/api/fragility', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lang: farm.language, lga: farm.lga ?? '' })
+          body: JSON.stringify({ lang: lang ?? farm?.language ?? 'en', lga: farm.lga ?? '' })
         });
         const fJson = await fRes.json();
           setFragility(fJson);
@@ -637,7 +880,7 @@ useEffect(() => {
       }
     })();
   }
-}, [farm?.language, activeTab, user, farm?.lga, weather]);
+}, [farm?.language, activeTab, user, farm?.lga, weather, lang]);
 
   // helper: reload more advisories (pagination)
   async function loadMoreHistory() {
@@ -723,6 +966,54 @@ useEffect(() => {
     }
   }
 
+  // Save farmer location (state + LGA) from settings
+  async function saveLocation() {
+    if (!user) return;
+    setLocationSaving(true);
+    try {
+      const fRef = doc(db, 'farmers', user.uid);
+      await updateDoc(fRef, { state: editState || null, lga: editLga || null });
+
+      // try to geocode the new location to lat/lon
+      let lat = farm?.lat;
+      let lon = farm?.lon;
+      try {
+        if (editLga && editState) {
+          const q = encodeURIComponent(`${editLga}, ${editState}, Nigeria`);
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`);
+          const geoArr = await geoRes.json();
+          if (geoArr && geoArr[0]) {
+            lat = parseFloat(geoArr[0].lat);
+            lon = parseFloat(geoArr[0].lon);
+            await updateDoc(fRef, { lat, lon });
+          }
+        }
+      } catch (e) {
+        console.warn('geocode on save failed', e);
+      }
+
+      // update local farm state
+      setFarm((f) => (f ? { ...f, state: editState || null, lga: editLga || null, lat: lat ?? f.lat, lon: lon ?? f.lon } : f));
+
+      // fetch soil summary for new coords
+      if (lat && lon) {
+        try {
+          await fetchSoilSummary(lat, lon, true);
+        } catch (e) {
+          console.warn('fetch soil after location update failed', e);
+        }
+      }
+
+      toast.success(t('toast_location_saved') ?? 'Location updated');
+      setLocationEditing(false);
+    } catch (e) {
+      console.error('save location failed', e);
+      toast.error(t('toast_save_failed') ?? 'Failed to save location');
+    } finally {
+      setLocationSaving(false);
+    }
+  }
+
   // Refresh advice manually (overview refresh button)
   async function refreshAdviceAndStore() {
     if (!user || !farm) return;
@@ -764,8 +1055,13 @@ useEffect(() => {
         body: JSON.stringify({
           crops: farm.crops ?? [],
           weather: wJson,
-          lang: farm.language ?? "en",
+          // prefer UI-selected language, fall back to farmer doc language then en
+          lang: lang ?? farm.language ?? "en",
           stage: null,
+          state: farm?.state ?? null,
+          lga: farm?.lga ?? null,
+          soilSummary: farm?.soilSummary ?? null,
+          soil: farm?.soil ?? null,
         }),
       });
       const adJson = await adRes.json();
@@ -794,27 +1090,13 @@ useEffect(() => {
       }
   const h = await fetchAdvisories(user!.uid, 10);
   if (Array.isArray(h)) {
-    // validate array items to match Advisory before setting state
-    const items = (h as unknown[]).filter(
-      (a): a is Advisory =>
-        typeof a === "object" &&
-        a !== null &&
-        typeof (a as Record<string, unknown>).advice === "string" &&
-        Array.isArray((a as Record<string, unknown>).crops) &&
-        (a as Record<string, unknown>).createdAt !== undefined
-    );
+    // be permissive: accept advisory documents that have either 'advice' or 'advisory' text
+    const items = (h as Advisory[]).filter((a) => typeof (a.advice ?? a.advisory) === "string");
     setAdvisories(items);
     setAdviceLastDoc(null);
   } else if (h && typeof h === "object" && Array.isArray((h as AdvisoryFetchResult).items)) {
     const res = h as AdvisoryFetchResult;
-    const items = (res.items ?? []).filter(
-      (a): a is Advisory =>
-        typeof a === "object" &&
-        a !== null &&
-        typeof (a as Record<string, unknown>).advice === "string" &&
-        Array.isArray((a as Record<string, unknown>).crops) &&
-        (a as Record<string, unknown>).createdAt !== undefined
-    );
+    const items = (res.items ?? []).filter((a: Advisory) => typeof (a.advice ?? a.advisory) === "string");
     setAdvisories(items);
     setAdviceLastDoc(res.lastDoc ?? null);
   } else {
@@ -1019,6 +1301,12 @@ useEffect(() => {
             >
               {t("fragility_history_tab")}
             </button>
+            <button
+              onClick={() => setActiveTab("forecast_advisory")}
+              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "forecast_advisory" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
+            >
+              {t("forecast_advisory_tab") ?? "Forecast Advisory"}
+            </button>
           </nav>
         </div>
       </header>
@@ -1104,6 +1392,99 @@ useEffect(() => {
                           </div>
                           <div className="text-lg font-semibold capitalize w-full">{weather?.current?.weather?.[0]?.description ?? weather?.weather?.[0]?.description ?? "-"}</div>
                           <div className="text-xs text-gray-500 w-full">{t("wind_speed")}: {weather?.current?.wind_speed ?? weather?.wind?.speed ?? "-"}</div>
+                        </div>
+                        {/* Forecast dropdown & preview */}
+                        <div className="mt-4">
+                          <label className="text-xs text-gray-500">{t('forecast_label') ?? 'Forecast'}</label>
+                          <div className="flex items-center gap-2 mt-2">
+                            <select value={String(forecastDays)} onChange={(e) => setForecastDays(Number(e.target.value))} className="px-3 py-2 rounded-lg border bg-white text-sm">
+                              <option value={3}>3 days</option>
+                              <option value={5}>5 days</option>
+                              <option value={7}>7 days</option>
+                              <option value={8}>8 days</option>
+                            </select>
+                            <button onClick={async () => {
+                              // fetch forecast for selected days
+                              if (!farm?.lat || !farm?.lon) {
+                                setForecastError(t('no_coords') ?? 'Location coordinates not available');
+                                return;
+                              }
+                              setForecastLoading(true);
+                              setForecastError(null);
+                              try {
+                                const res = await fetch('/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat: farm.lat, lon: farm.lon, days: forecastDays }) });
+                                const j = await res.json();
+                                if (!res.ok) {
+                                  setForecast(null);
+                                  setForecastError(j?.error || 'Failed to fetch forecast');
+                                } else {
+                                  // when API returns { daily: [...] }
+                                  if (Array.isArray(j.daily)) setForecast(j.daily);
+                                  else if (Array.isArray(j)) setForecast(j);
+                                  else setForecast(null);
+                                }
+                              } catch (err) {
+                                setForecastError(String(err));
+                                setForecast(null);
+                              } finally {
+                                setForecastLoading(false);
+                              }
+                            }} className="px-3 py-2 rounded bg-green-600 text-white text-sm">{t('get_forecast') ?? 'Get forecast'}</button>
+                          </div>
+
+                          <div className="mt-3">
+                            {forecastLoading ? <div className="text-sm text-gray-500">Loading forecast...</div> : null}
+                            {forecastError ? <div className="text-sm text-red-600">{forecastError}</div> : null}
+                            {forecast && forecast.length > 0 && (
+                              <div className="mt-2">
+                                {/* 3 individual day cards (first N days) */}
+                                {(() => {
+                                  const previewCount = Math.min(3, forecast.length);
+                                  const previewDays = forecast.slice(0, previewCount);
+                                  return (
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                      {previewDays.map((d, idx) => {
+                                        const dt = d.dt ? new Date(d.dt * 1000).toLocaleDateString() : `Day ${idx + 1}`;
+                                        const min = d.temp?.min ?? d.temp?.night ?? '-';
+                                        const max = d.temp?.max ?? d.temp?.day ?? '-';
+                                        const desc = d.weather?.[0]?.description ?? '-';
+                                        const hum = d.humidity ?? '-';
+                                        return (
+                                          <div key={idx} className="p-3 rounded-lg bg-white border flex flex-col items-start gap-2">
+                                            <div className="flex items-center gap-2 w-full">
+                                              <div className="text-xs text-gray-500">{dt}</div>
+                                            </div>
+                                            <div className="text-lg font-semibold capitalize w-full">{desc}</div>
+                                            <div className="text-2xl font-semibold w-full">{min}° / {max}°C</div>
+                                            <div className="text-xs text-gray-500 w-full">{t('humidity') ?? 'Humidity'}: {hum}%</div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* detailed per-day list below preview (existing) */}
+                                <div className="grid grid-cols-1 gap-2 mt-3">
+                                  {forecast.map((d: ForecastDay, i: number) => {
+                                    const dt = d.dt ? new Date(d.dt * 1000).toLocaleDateString() : `Day ${i+1}`;
+                                    const min = d.temp?.min ?? d.temp?.night ?? '-';
+                                    const max = d.temp?.max ?? d.temp?.day ?? '-';
+                                    const desc = d.weather?.[0]?.description ?? '-';
+                                    return (
+                                      <div key={i} className="p-2 border rounded flex items-center justify-between">
+                                        <div>
+                                          <div className="text-sm font-semibold text-green-800">{dt}</div>
+                                          <div className="text-xs text-gray-600 capitalize">{desc}</div>
+                                        </div>
+                                        <div className="text-sm text-gray-700">{min}° / {max}°C</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1192,7 +1573,7 @@ useEffect(() => {
                     // refresh fragility
                     (async () => {
                       try {
-                        const fRes = await fetch('/api/fragility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: farm?.language ?? 'en', lga: farm?.lga ?? '' }) });
+                        const fRes = await fetch('/api/fragility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: lang ?? farm?.language ?? 'en', lga: farm?.lga ?? '' }) });
                         const fJson = await fRes.json();
                         setFragility(fJson);
                         setFragilityUpdatedAt(Date.now());
@@ -1382,7 +1763,8 @@ useEffect(() => {
 
                 realAdvisories.forEach(a => {
                   const d = toDate((a as unknown as { createdAt?: unknown }).createdAt);
-                  const key = d.toISOString().slice(10, 0);
+                  // use YYYY-MM-DD for grouping
+                  const key = d.toISOString().slice(0, 10);
                   if (!grouped[key]) grouped[key] = [];
                   grouped[key].push(a);
                 });
@@ -1444,14 +1826,17 @@ useEffect(() => {
   onClose={() => setAdvisoryDetailOpen(false)}
   advisory={
     selectedAdvisory
-      ? {
-          ...selectedAdvisory,
+      ? ({
+          // normalize to the AdvisoryDetailModal expected shape: ensure `advice` is always a string
+          advice: selectedAdvisory.advice ?? selectedAdvisory.advisory ?? "",
+          crops: selectedAdvisory.crops ?? [],
           createdAt:
             typeof selectedAdvisory.createdAt === "object" &&
-            "seconds" in selectedAdvisory.createdAt
-              ? new Date(selectedAdvisory.createdAt.seconds * 1000)
+            selectedAdvisory.createdAt !== null &&
+            "seconds" in (selectedAdvisory.createdAt as Record<string, unknown>)
+              ? new Date((selectedAdvisory.createdAt as { seconds?: number }).seconds! * 1000)
               : selectedAdvisory.createdAt,
-        }
+        } as unknown as { advice: string; crops: string[]; createdAt: string | Date })
       : null
   }
 />
@@ -1548,13 +1933,250 @@ useEffect(() => {
                   <div className="text-sm text-gray-500">{t("language_label")}</div>
                   <div className="font-medium">{farm?.language ?? "English"}</div>
                 </div>
+                
+                <div className="p-3 bg-white rounded shadow col-span-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm text-gray-500">{t('location_label') ?? 'Location'}</div>
+                      <div className="font-medium">{farm?.lga}, {farm?.state}</div>
+                    </div>
+                    <div>
+                      {!locationEditing ? (
+                        <button onClick={() => { setEditState(farm?.state ?? ''); setEditLga(farm?.lga ?? ''); setLocationEditing(true); }} className="px-3 py-2 bg-green-600 text-white rounded">{t('change_location') ?? 'Change'}</button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <select value={editState} onChange={(e) => { setEditState(e.target.value); setEditLga(''); }} className="px-2 py-1 border rounded">
+                            <option value="">{t('select_state') ?? 'Select state'}</option>
+                            {Object.keys(NIGERIA_STATES_LGAS).map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                          <select value={editLga} onChange={(e) => setEditLga(e.target.value)} className="px-2 py-1 border rounded">
+                            <option value="">{t('select_lga') ?? 'Select LGA'}</option>
+                            {(NIGERIA_STATES_LGAS[editState] || []).map((l) => (
+                              <option key={l} value={l}>{l}</option>
+                            ))}
+                          </select>
+                          <button onClick={saveLocation} disabled={locationSaving} className="px-3 py-1 bg-green-600 text-white rounded">{t('save') ?? 'Save'}</button>
+                          <button onClick={() => setLocationEditing(false)} className="px-3 py-1 bg-red-50 text-red-600 rounded">{t('cancel') ?? 'Cancel'}</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Forecast Advisory */}
+        {activeTab === "forecast_advisory" && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="bg-white/90 p-4 rounded-2xl shadow space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-green-800">{t("forecast_advisory_tab") ?? "Forecast Advisory"}</h3>
+                <div>
+                  <button 
+                    onClick={() => {
+                      if (!selectedForecastDay) {
+                        toast.info(t("select_forecast_first") ?? "Please select a forecast date first");
+                        return;
+                      }
+                      
+                      setLoadingForecastAdvice(true);
+                      fetch("/api/advice", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          crops: farm?.crops ?? [],
+                          weather: selectedForecastDay,
+                          lang: lang ?? farm?.language ?? "en",
+                          cropStages: (() => {
+                            const stages: Record<string, { stage?: string }> = {};
+                            (farm?.crops ?? []).forEach((c) => {
+                              stages[c] = { stage: farm?.cropStatus?.[c]?.stage ?? "unknown" };
+                            });
+                            return stages;
+                          })(),
+                          forecastDate: (selectedForecastDay && typeof selectedForecastDay.dt === "number") ? new Date(selectedForecastDay.dt * 1000).toISOString() : undefined,
+                          state: farm?.state ?? null,
+                          lga: farm?.lga ?? null,
+                          soilSummary: farm?.soilSummary ?? null,
+                          soil: farm?.soil ?? null,
+                        }),
+                      })
+                      .then((res) => res.json())
+                      .then((data) => {
+                        if (data && Array.isArray(data.items)) {
+                          // Build per-crop advisory that includes a weather summary and crop stage before the AI advice
+                          const dtStr = selectedForecastDay ? new Date(selectedForecastDay.dt * 1000).toLocaleDateString() : '';
+                          const min = selectedForecastDay ? (selectedForecastDay.temp?.min ?? selectedForecastDay.temp?.night ?? '-') : '-';
+                          const max = selectedForecastDay ? (selectedForecastDay.temp?.max ?? selectedForecastDay.temp?.day ?? '-') : '-';
+                          const desc = selectedForecastDay ? (selectedForecastDay.weather?.[0]?.description ?? '-') : '-';
+
+                          const joined = (data.items as { crop: string; advice: string }[]).map((it, i) => {
+                            const cropName = it.crop || '';
+                            // try direct key, then lowercase key
+                            const directStage = farm?.cropStatus && Object.prototype.hasOwnProperty.call(farm.cropStatus, cropName) ? farm.cropStatus[cropName]?.stage : undefined;
+                            const lcStage = farm?.cropStatus && cropName ? farm.cropStatus[cropName.toLowerCase()]?.stage : undefined;
+                            const stage = directStage ?? lcStage ?? 'unknown';
+                            return `${i + 1}. Weather for ${dtStr}: ${desc} — ${min}°/${max}°C. Your ${cropName} is at ${stage}. Recommendation: ${it.advice}`;
+                          }).join('\n\n');
+
+                          setForecastAdvice(data.header ? `${data.header}\n\n${joined}` : joined);
+                          // persist forecast advisory (best effort)
+                          try {
+                            if (user) {
+                              const adviceText = data.header ? `${data.header}\n\n${joined}` : joined;
+                              addForecastAdvisory(user.uid, {
+                                forecastDate: (selectedForecastDay && typeof selectedForecastDay.dt === "number") ? new Date(selectedForecastDay.dt * 1000).toISOString() : '',
+                                advice: adviceText,
+                                forecastWeather: selectedForecastDay,
+                                crops: farm?.crops ?? [],
+                              }).catch((e) => console.warn('persisting forecast advisory failed', e));
+                            }
+                          } catch (e) {
+                            console.warn('persist forecast advisory error', e);
+                          }
+                        } else {
+                          setForecastAdvice(data?.advisory ?? data?.advice ?? "No forecast advisory available");
+                        }
+                        toast.success(t("advice_refreshed") ?? "Forecast advice updated");
+                      })
+                      .catch((err) => {
+                        console.error("Forecast advice refresh error:", err);
+                        toast.error(t("toast_advice_failed") ?? "Failed to refresh forecast advice");
+                      })
+                      .finally(() => {
+                        setLoadingForecastAdvice(false);
+                      });
+                    }} 
+                    className="px-3 py-2 rounded bg-green-600 text-white"
+                    disabled={loadingForecastAdvice}
+                  >
+                    {loadingForecastAdvice ? (t("refreshing") ?? "Refreshing...") : (t("refresh") ?? "Refresh")}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Forecast Selection Section */}
+                <div className="bg-white rounded-lg p-4 shadow-sm">
+                  <div className="text-sm font-medium text-gray-600 mb-3">{t("select_forecast_date") ?? "Select Forecast Date"}</div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <select value={String(forecastDays)} onChange={(e) => setForecastDays(Number(e.target.value))} className="px-3 py-2 rounded-lg border bg-white text-sm">
+                      <option value={3}>3 days</option>
+                      <option value={5}>5 days</option>
+                      <option value={7}>7 days</option>
+                      <option value={8}>8 days</option>
+                    </select>
+                    <button onClick={async () => {
+                      if (!farm?.lat || !farm?.lon) {
+                        toast.info(t('no_coords') ?? 'Location coordinates not available');
+                        return;
+                      }
+                      setForecastLoading(true);
+                      setForecastError(null);
+                      setSelectedForecastDay(null);
+                      setForecastAdvice("");
+                      try {
+                        const res = await fetch('/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat: farm.lat, lon: farm.lon, days: forecastDays }) });
+                        const j = await res.json();
+                        if (!res.ok) {
+                          setForecast(null);
+                          setForecastError(j?.error || 'Failed to fetch forecast');
+                        } else {
+                          if (Array.isArray(j.daily)) setForecast(j.daily);
+                          else if (Array.isArray(j)) setForecast(j);
+                          else setForecast(null);
+                        }
+                      } catch (err) {
+                        setForecastError(String(err));
+                        setForecast(null);
+                      } finally {
+                        setForecastLoading(false);
+                      }
+                    }} className="px-3 py-2 rounded bg-green-600 text-white text-sm">{t('get_forecast') ?? 'Load forecast'}</button>
+                  </div>
+
+                  {forecast && forecast.length > 0 ? (
+                    <div>
+                      <select
+                        className="w-full px-3 py-2 rounded-lg border bg-white text-sm"
+                        value={selectedForecastDay ? String(selectedForecastDay.dt) : ""}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const found = (forecast || []).find((f) => f.dt === val) ?? null;
+                          setSelectedForecastDay(found);
+                          setForecastAdvice("");
+                        }}
+                      >
+                        <option value="">{t('select_forecast_first') ?? 'Select a day'}</option>
+                        {forecast.map((day: ForecastDay, idx: number) => {
+                          const dt = day.dt ? new Date(day.dt * 1000).toLocaleDateString() : `Day ${idx+1}`;
+                          const desc = day.weather?.[0]?.description ?? '-';
+                          return (
+                            <option key={idx} value={String(day.dt)}>{`${dt} — ${desc}`}</option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="text-gray-600 text-sm">
+                      {forecast === null ? (
+                        <>{t("select_days_get_forecast") ?? "Select forecast days and click 'Load forecast'"}</>
+                      ) : forecastLoading ? (
+                        <>{t("loading_forecast") ?? "Loading forecast..."}</>
+                      ) : (
+                        <>{forecastError || (t("no_forecast") ?? "No forecast data available")}</>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Advisory Section */}
+                <div className="space-y-4">
+                  {/* Current Advisory */}
+                  <div className="bg-white rounded-lg p-4 shadow-sm">
+                    <div className="text-sm font-medium text-gray-600 mb-3">
+                      {selectedForecastDay ? (
+                        <div className="flex items-center justify-between">
+                          <span>{t("forecast_advisory") ?? "Forecast Advisory"}</span>
+                          <span className="text-green-700">
+                            {new Date(selectedForecastDay.dt * 1000).toLocaleDateString()}
+                          </span>
+                        </div>
+                      ) : (
+                        <>{t("forecast_advisory") ?? "Forecast Advisory"}</>
+                      )}
+                    </div>
+                    
+                    {loadingForecastAdvice ? (
+                      <div className="py-4 flex items-center justify-center">
+                        <Loader />
+                      </div>
+                    ) : forecastAdvice ? (
+                      <div className="prose prose-sm max-w-none">
+                        <div className="whitespace-pre-line">{forecastAdvice}</div>
+                      </div>
+                    ) : (
+                      <div className="text-gray-600">
+                        {selectedForecastDay ? (
+                          t("generating_advice") ?? "Generating recommendations..."
+                        ) : (
+                          t("select_forecast_prompt") ?? "Select a forecast date to see crop recommendations"
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </motion.div>
         )}
       </main>
+      </div>
 
-    </div>
     {/* Modals - only render once, outside dashboard container */}
   <CropEditorModal open={cropModalOpen} onClose={() => setCropModalOpen(false)} currentCrops={farm?.crops ?? []} onSave={handleSaveCrops} />
     <CropDetailModal
@@ -1562,7 +2184,7 @@ useEffect(() => {
       onClose={() => setDetailModalOpen(false)}
       crop={detailCrop ?? { id: "", name: "" }}
       weather={weather}
-      lang={farm?.language ?? lang}
+      lang={lang ?? farm?.language}
       onOpenStageModal={() => {
         // open stage modal (detail modal already set detailCrop)
         setStageModalTarget(detailCrop?.id ?? null);

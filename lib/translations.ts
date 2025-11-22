@@ -86,6 +86,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     load_more_history: "Load more history",
     loading: "Loading...",
 
+  // Forecast / advisory keys
+  forecast_advisory_tab: "Forecast Advisory",
+  select_forecast_date: "Select Forecast Date",
+  select_days_get_forecast: "Select forecast days and click 'Get forecast' in the Overview tab",
+  forecast_advisory: "Forecast Advisory",
+  select_forecast_prompt: "Select a forecast date to see crop recommendations",
+  select_forecast_first: "Please select a forecast date first",
+  loading_forecast: "Loading forecast...",
+  no_forecast: "No forecast data available",
+  generating_advice: "Generating recommendations...",
 
     // weather / overview
     current_weather: "Current Weather",
@@ -214,6 +224,17 @@ title: "Kilomit Aminka, Ihu Igwe, Kusanyi da Shawarwari AI don Manoma Najeriya",
     no_coords: "Babu haɗin wuri; sabunta wurin ku a Saituna.",
     load_more_history: "Kara tarihin",
     loading: "Ana lodawa...",
+
+  // Forecast / advisory keys (Hausa)
+  forecast_advisory_tab: "Shawarwarin Hasashen Yanayi",
+  select_forecast_date: "Zaɓi Ranar Hasashe",
+  select_days_get_forecast: "Zaɓi yawan kwanaki don hasashe, sannan danna 'Get forecast' a shafin Overview",
+  forecast_advisory: "Shawarwarin Hasashe",
+  select_forecast_prompt: "Zaɓi ranar hasashe don ganin shawarwarin amfanin gona",
+  select_forecast_first: "Da fatan za a zaɓi ranar hasashe farko",
+  loading_forecast: "Ana ɗaukar hasashe...",
+  no_forecast: "Babu bayanan hasashe",
+  generating_advice: "Ana ƙirƙirar shawarwarin...",
 
     // weather
     current_weather: "Yanayi na yanzu",
@@ -349,6 +370,17 @@ title: "Otu Nna-otu, Otu Oji, Nkweghachi, ma Ntuziaka AI don Ndị Ọrụ Ugbo 
     load_more_history: "Buru akụkọ",
     loading: "Na-ebuli...",
 
+  // Forecast / advisory keys (Igbo)
+  forecast_advisory_tab: "Ntuziaka Amụma Ihu Igwe",
+  select_forecast_date: "Họrọ ụbọchị amụma",
+  select_days_get_forecast: "Họrọ ụbọchị amụma wee pịa 'Get forecast' na Overview",
+  forecast_advisory: "Ntuziaka Amụma",
+  select_forecast_prompt: "Họrọ ụbọchị amụma iji hụ ndụmọdụ mkpụrụ",
+  select_forecast_first: "Biko họrọ ụbọchị amụma mbụ",
+  loading_forecast: "Na-ebufe amụma...",
+  no_forecast: "Enweghị data amụma",
+  generating_advice: "Na-emepụta ndụmọdụ...",
+
     current_weather: "Ihu Igwe Ugbu a",
     temperature: "Okpomọkụ",
     feels_like: "Dị ka",
@@ -476,6 +508,17 @@ title: "Otu Awo, Otu Oji, Iwọle, ati Imọran AI fun Awọn Agbe Naijiria",
     no_coords: "Ko si ipo; imudojuiwọn ipo rẹ ni Eto.",
     load_more_history: "Gbe itan siwaju",
     loading: "Nnkan ti n gbe...",
+
+  // Forecast / advisory keys (Yoruba)
+  forecast_advisory_tab: "Itọsọna Asọtẹlẹ Ojú-ọjọ",
+  select_forecast_date: "Yan Ọjọ Asọtẹlẹ",
+  select_days_get_forecast: "Yan ọjọ asọtẹlẹ ki o tẹ 'Get forecast' ni taabu Overview",
+  forecast_advisory: "Itọsọna Asọtẹlẹ",
+  select_forecast_prompt: "Yan ọjọ asọtẹlẹ lati rii awọn iṣeduro ọgbin",
+  select_forecast_first: "Jọwọ yan ọjọ asọtẹlẹ akọkọ",
+  loading_forecast: "N n gba asọtẹlẹ...",
+  no_forecast: "Ko si data asọtẹlẹ",
+  generating_advice: "N n ṣe agbejade awọn iṣeduro...",
 
     current_weather: "Oju-Ojo Lọwọlọwọ",
     temperature: "Iwọn otutu",

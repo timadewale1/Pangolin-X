@@ -18,13 +18,9 @@ import { db } from "@/lib/firebase";
 // `farmers/{uid}/advisories`. Fields are optional where callers may omit
 // them (serverTimestamp is added by `addAdvisory`). Keep this in sync with
 // any server-side functions that read/write advisories.
-export interface AdvisoryData {
-  // Primary textual advisory produced by the AI / generator. Some code uses
-  // `advice` while other callers may use `advisory` — accept both to be
-  // forgiving during migration.
-  advice?: string;
-  advisory?: string;
 
+// Common fields shared between regular and forecast advisories
+interface BaseAdvisoryData {
   // Optional human-friendly title or short summary
   title?: string;
 
@@ -37,6 +33,26 @@ export interface AdvisoryData {
   // createdAt is added by serverTimestamp() on write, but allow callers to
   // provide it for testing or migrations.
   createdAt?: unknown;
+}
+// Regular advisory with immediate advice
+export interface AdvisoryData extends BaseAdvisoryData {
+  // Primary textual advisory produced by the AI / generator. Some code uses
+  // `advice` while other callers may use `advisory` — accept both to be
+  // forgiving during migration.
+  advice?: string;
+  advisory?: string;
+}
+
+// Forecast advisory with future date and recommendations
+export interface ForecastAdvisoryData extends BaseAdvisoryData {
+  // The forecasted date this advisory applies to
+  forecastDate: string;
+  
+  // The advisory text for the forecast date
+  advice: string;
+  
+  // Original forecast weather data that was used
+  forecastWeather: Record<string, unknown>;
 }
 
 // Add new advisory
@@ -60,11 +76,39 @@ export async function addFragilityAdvisory(uid: string, data: FragilityAdvisoryD
 }
 
 // Fetch advisory history (latest first)
+// Add forecast advisory
+export async function addForecastAdvisory(uid: string, data: ForecastAdvisoryData) {
+  const ref = collection(db, "farmers", uid, "forecastAdvisories");
+  await addDoc(ref, { ...data, createdAt: serverTimestamp() });
+}
+
 export async function fetchAdvisories(uid: string, count: number = 10) {
   const ref = collection(db, "farmers", uid, "advisories");
   const q = query(ref, orderBy("createdAt", "desc"), limit(count));
   const snap = await getDocs(q);
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
+
+// Fetch forecast advisories for a specific date range
+export async function fetchForecastAdvisories(uid: string, fromDate: Date, toDate: Date, count: number = 10) {
+  const ref = collection(db, "farmers", uid, "forecastAdvisories");
+  const q = query(
+    ref,
+    // Filter to forecasts within the date range
+    orderBy("forecastDate"),
+    // Use .where() after orderBy() for range queries
+    // Convert dates to ISO strings for comparison
+    limit(count)
+  );
+  const snap = await getDocs(q);
+  
+  // Filter client-side since Firestore doesn't support string range comparisons well
+  return snap.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() as ForecastAdvisoryData }))
+    .filter((doc) => {
+      const forecastDate = new Date(doc.forecastDate);
+      return forecastDate >= fromDate && forecastDate <= toDate;
+    });
 }
 
 // Fetch fragility advisory history
@@ -111,4 +155,40 @@ export interface FarmerData {
 export async function createFarmer(uid: string, data: FarmerData) {
   const ref = doc(db, "farmers", uid);
   await setDoc(ref, { ...data, createdAt: serverTimestamp() });
+}
+
+// Soil type interface - key is 'state|LGA' to avoid duplicate LGA names across states
+interface SoilTypeData {
+  type: string;  // primary soil type
+  description?: string;  // optional detailed description
+  nutrients?: {  // optional nutrient levels
+    nitrogen?: 'low' | 'medium' | 'high';
+    phosphorus?: 'low' | 'medium' | 'high';
+    potassium?: 'low' | 'medium' | 'high';
+  };
+  traits?: {  // optional soil characteristics
+    pH?: number;
+    drainage?: 'poor' | 'moderate' | 'good';
+    texture?: 'sandy' | 'silty' | 'clay' | 'loam' | 'mixed';
+  };
+}
+
+// Helper: Get soil type for a given state and LGA
+export async function getSoilType(state: string, lga: string): Promise<SoilTypeData | null> {
+  if (!state || !lga) return null;
+  const key = `${state}|${lga}`.toLowerCase();
+  const ref = doc(db, 'soilTypes', key);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    return null;
+  }
+  return snap.data() as SoilTypeData;
+}
+
+// Helper: Set soil type for a given state and LGA
+export async function setSoilType(state: string, lga: string, data: SoilTypeData) {
+  if (!state || !lga) throw new Error('State and LGA required');
+  const key = `${state}|${lga}`.toLowerCase();
+  const ref = doc(db, 'soilTypes', key);
+  await setDoc(ref, data);
 }

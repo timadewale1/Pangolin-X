@@ -1,7 +1,7 @@
 export const CROP_OPTIONS = [
   { id: "maize", label: "Maize", img: "https://images.unsplash.com/photo-1508061253142-4f6f2c2b3f4a?q=80&w=900&auto=format&fit=crop" },
   { id: "cassava", label: "Cassava", img: "https://images.unsplash.com/photo-1579621970563-ebec7560ff5d?q=80&w=900&auto=format&fit=crop" },
-  { id: "rice", label: "Rice", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=900&auto=format&fit=crop" },
+  { id: "rice", label: "Rice", img: "https://unsplash.com/photos/white-rice-grains-on-brown-wooden-table--LdilhDx3sk" },
   { id: "cowpea", label: "Cowpea", img: "https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=900&auto=format&fit=crop" },
   { id: "yam", label: "Yam", img: "https://images.unsplash.com/photo-1601004890684-d8cbf643f5f2?q=80&w=900&auto=format&fit=crop" },
   { id: "groundnut", label: "Groundnut", img: "https://images.unsplash.com/photo-1518976024611-6d04b6d1b9a5?q=80&w=900&auto=format&fit=crop" },
