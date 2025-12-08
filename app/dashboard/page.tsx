@@ -212,13 +212,12 @@ export default function DashboardPage() {
       // update local farm state
       setFarm((f) => (f ? { ...f, soil: out, soilSummary: out.summary } : f));
 
-      // optionally persist to farmer doc in firestore
+      // optionally persist to farmer doc in firestore via server-side endpoint
       if (saveToFarm && user) {
         try {
-          const fRef = doc(db, 'farmers', user.uid);
-          await updateDoc(fRef, { soil: out, soilSummary: out.summary });
+          await fetch('/api/soilgrids/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: user.uid, soil: out, soilSummary: out.summary }) });
         } catch (e) {
-          console.warn('failed to persist soil to farmer doc', e);
+          console.warn('failed to persist soil to farmer doc (server endpoint)', e);
         }
       }
       return out;
@@ -319,6 +318,8 @@ export default function DashboardPage() {
   const [locationEditing, setLocationEditing] = useState(false);
   const [editState, setEditState] = useState<string>("");
   const [editLga, setEditLga] = useState<string>("");
+  const [editStateSearch, setEditStateSearch] = useState<string>("");
+  const [editLgaSearch, setEditLgaSearch] = useState<string>("");
   const [locationSaving, setLocationSaving] = useState(false);
   const [fragilityHistory, setFragilityHistory] = useState<FragilityResp[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -353,6 +354,37 @@ export default function DashboardPage() {
       return `${hh}:${mm}`;
     } catch {
       return "";
+    }
+  }
+
+  // helper: extract pH and texture percents from soil object returned by SoilGrids
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function extractSoilStats(soil: any) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const props = (soil?.properties && (soil as any).properties.properties) ? (soil as any).properties.properties : (soil as any).properties ?? null;
+      if (!props) return null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const firstMean = (obj: any) => {
+        if (!obj) return undefined;
+        if (Array.isArray(obj.values) && obj.values.length > 0 && obj.values[0].mean !== undefined) return obj.values[0].mean;
+        if (Array.isArray(obj.depths) && obj.depths.length > 0) {
+          const d = obj.depths[0];
+          if (d && d.values && Array.isArray(d.values) && d.values[0] && d.values[0].mean !== undefined) return d.values[0].mean;
+          if (d && d.value && typeof d.value === 'number') return d.value;
+        }
+        if (typeof obj.mean === 'number') return obj.mean;
+        return undefined;
+      };
+
+      const ph = firstMean(props.phh2o ?? props.phh2o?.[0] ?? null);
+      const sand = firstMean(props.sand ?? null);
+      const silt = firstMean(props.silt ?? null);
+      const clay = firstMean(props.clay ?? null);
+
+      return { ph, sand, silt, clay };
+    } catch {
+      return null;
     }
   }
 
@@ -1263,6 +1295,28 @@ useEffect(() => {
             </div>
           </div>
 
+          {/* Soil summary (from SoilGrids) - placed after subscription display */}
+          { (!!(farm?.soilSummary || farm?.soil)) && (
+            <div className="w-full max-w-5xl mx-auto px-4 mt-4">
+              <div className="bg-white/90 rounded-2xl p-4 shadow-sm">
+                <div className="text-sm text-gray-500">Soil summary</div>
+                <div className="font-medium mt-1">{farm?.soilSummary ?? 'Unknown'}</div>
+                {( (() => {
+                  const stats = extractSoilStats(farm?.soil);
+                  if (!stats) return null;
+                  return (
+                    <div className="text-sm text-gray-600 mt-2">
+                      <span className="mr-3">pH: {stats.ph !== undefined ? (Math.round(stats.ph * 10) / 10) : '—'}</span>
+                      <span className="mr-3">sand: {stats.sand !== undefined ? `${Math.round(stats.sand)}%` : '—'}</span>
+                      <span className="mr-3">silt: {stats.silt !== undefined ? `${Math.round(stats.silt)}%` : '—'}</span>
+                      <span>clay: {stats.clay !== undefined ? `${Math.round(stats.clay)}%` : '—'}</span>
+                    </div>
+                  );
+                })() as React.ReactNode )}
+              </div>
+            </div>
+          )}
+
           {/* tabs */}
           <nav className="mt-4 flex items-center gap-2 overflow-x-auto no-scrollbar px-1 pb-2" style={{ WebkitOverflowScrolling: 'touch' }}>
             <button
@@ -1944,21 +1998,57 @@ useEffect(() => {
                       {!locationEditing ? (
                         <button onClick={() => { setEditState(farm?.state ?? ''); setEditLga(farm?.lga ?? ''); setLocationEditing(true); }} className="px-3 py-2 bg-green-600 text-white rounded">{t('change_location') ?? 'Change'}</button>
                       ) : (
-                        <div className="flex items-center gap-2">
-                          <select value={editState} onChange={(e) => { setEditState(e.target.value); setEditLga(''); }} className="px-2 py-1 border rounded">
-                            <option value="">{t('select_state') ?? 'Select state'}</option>
-                            {Object.keys(NIGERIA_STATES_LGAS).map((s) => (
-                              <option key={s} value={s}>{s}</option>
-                            ))}
-                          </select>
-                          <select value={editLga} onChange={(e) => setEditLga(e.target.value)} className="px-2 py-1 border rounded">
-                            <option value="">{t('select_lga') ?? 'Select LGA'}</option>
-                            {(NIGERIA_STATES_LGAS[editState] || []).map((l) => (
-                              <option key={l} value={l}>{l}</option>
-                            ))}
-                          </select>
-                          <button onClick={saveLocation} disabled={locationSaving} className="px-3 py-1 bg-green-600 text-white rounded">{t('save') ?? 'Save'}</button>
-                          <button onClick={() => setLocationEditing(false)} className="px-3 py-1 bg-red-50 text-red-600 rounded">{t('cancel') ?? 'Cancel'}</button>
+                        <div className="w-full">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <input
+                                value={editStateSearch}
+                                onChange={(e) => setEditStateSearch(e.target.value)}
+                                placeholder={t('search_state') ?? 'Search state...'}
+                                className="w-full border p-2 rounded"
+                              />
+                              <div className="mt-2 max-h-40 overflow-y-auto grid grid-cols-1 gap-1">
+                                {Object.keys(NIGERIA_STATES_LGAS)
+                                  .filter((s) => (editStateSearch ? s.toLowerCase().includes(editStateSearch.toLowerCase()) : true))
+                                  .map((s) => (
+                                    <button
+                                      key={s}
+                                      type="button"
+                                      onClick={() => { setEditState(s); setEditLga(''); setEditLgaSearch(''); }}
+                                      className={`w-full text-left p-2 border rounded ${editState === s ? 'bg-green-50 border-green-400' : ''}`}>
+                                      {s}
+                                    </button>
+                                  ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <input
+                                value={editLgaSearch}
+                                onChange={(e) => setEditLgaSearch(e.target.value)}
+                                placeholder={t('search_lga') ?? 'Search LGA...'}
+                                className="w-full border p-2 rounded"
+                                disabled={!editState}
+                              />
+                              <div className="mt-2 max-h-40 overflow-y-auto grid grid-cols-1 gap-1">
+                                {(NIGERIA_STATES_LGAS[editState] || [])
+                                  .filter((l) => (editLgaSearch ? l.toLowerCase().includes(editLgaSearch.toLowerCase()) : true))
+                                  .map((l) => (
+                                    <button
+                                      key={l}
+                                      type="button"
+                                      onClick={() => setEditLga(l)}
+                                      className={`w-full text-left p-2 border rounded ${editLga === l ? 'bg-green-50 border-green-400' : ''}`}>
+                                      {l}
+                                    </button>
+                                  ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 mt-3">
+                            <button onClick={saveLocation} disabled={locationSaving} className="px-3 py-2 bg-green-600 text-white rounded">{t('save') ?? 'Save'}</button>
+                            <button onClick={() => setLocationEditing(false)} className="px-3 py-2 bg-red-50 text-red-600 rounded">{t('cancel') ?? 'Cancel'}</button>
+                          </div>
                         </div>
                       )}
                     </div>

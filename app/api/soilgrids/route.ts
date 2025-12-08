@@ -9,9 +9,13 @@ export async function POST(req: Request) {
     const body = await req.json();
     const lat = Number(body?.lat);
     const lon = Number(body?.lon);
-    if (!lat || !lon) return new Response(JSON.stringify({ error: 'lat and lon required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    // Accept 0 coordinates; ensure lat/lon are finite numbers
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return new Response(JSON.stringify({ error: 'lat and lon required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
 
-    const key = `${lat}:${lon}`;
+    // normalize coordinates for cache key to avoid long floats
+    const key = `${lat.toFixed(6)}:${lon.toFixed(6)}`;
     const now = Date.now();
     const cached = CACHE.get(key);
     if (cached && (now - cached.ts) < TTL) {
