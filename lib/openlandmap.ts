@@ -1,4 +1,4 @@
-import GeoTIFF from 'geotiff';
+import * as GeoTIFF from 'geotiff';
 
 type OlmResult = {
   clay?: number | null;
@@ -9,6 +9,7 @@ type OlmResult = {
   bulk_density?: number | null;
   texture?: number | null;
   raw?: Record<string, unknown>;
+  [key: string]: number | null | undefined | Record<string, unknown>;
 };
 
 const LAYER_MAP: Record<string, string> = {
@@ -67,8 +68,8 @@ async function fetchLayerValue(layerId: string, lat: number, lon: number): Promi
 
       const data = await image.readRasters({ interleave: false });
       if (Array.isArray(data) && data.length > 0) {
-        const first = (data as any)[0];
-        if (Array.isArray(first) && first.length > 0) {
+        const first = (data as (number[] | Uint8Array | Uint16Array | Uint32Array | Float32Array | Float64Array)[])[0];
+        if (Array.isArray(first) || ArrayBuffer.isView(first)) {
           const val = first[0];
           if (typeof val === 'number' && !Number.isNaN(val)) {
             // treat nodata as null
@@ -95,8 +96,8 @@ export async function fetchOpenLandMap(lat: number, lon: number): Promise<OlmRes
   await Promise.all(keys.map(async (k) => {
     const layerId = LAYER_MAP[k];
     const v = await fetchLayerValue(layerId, lat, lon);
-    (out as any)[k] = v;
-    (out.raw as any)[k] = { layerId, value: v };
+    out[k] = v;
+    (out.raw as Record<string, { layerId: string; value: number | null }>)[k] = { layerId, value: v };
   }));
   return out;
 }
