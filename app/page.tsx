@@ -7,7 +7,7 @@ import LanguageButton from "@/components/LanguageButton";
 import { FaCloudSun, FaLeaf, FaGlobe, FaMobileAlt } from "react-icons/fa";
 
 export default function Home() {
-  const { t, lang, setLang } = useLanguage();
+  const { t } = useLanguage();
 
   const heroImg = "https://images.unsplash.com/photo-1620200423727-8127f75d7f53?q=80&w=600&auto=format&fit=crop";
   const howImg = "https://images.unsplash.com/photo-1744230673231-865d54a0aba4?q=80&w=600&auto=format&fit=crop";

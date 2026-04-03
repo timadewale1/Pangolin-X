@@ -19,12 +19,57 @@ export async function POST(req: Request) {
       if (days > maxDays) {
         return NextResponse.json({ error: `Forecast unavailable for more than ${maxDays} days via this API` }, { status: 400 });
       }
-      const url = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lon}&units=metric&exclude=minutely,hourly,alerts&appid=${key}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      // Ensure we return only the requested number of daily entries (if present)
-      const daily = Array.isArray(data.daily) ? data.daily.slice(0, days) : [];
-      return NextResponse.json({ timezone: data.timezone, lat: data.lat ?? lat, lon: data.lon ?? lon, current: data.current ?? null, daily });
+      const oneCallUrl = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lon}&units=metric&exclude=minutely,hourly,alerts&appid=${key}`;
+      const oneCallResponse = await fetch(oneCallUrl);
+      if (oneCallResponse.ok) {
+        const data = await oneCallResponse.json();
+        const daily = Array.isArray(data.daily) ? data.daily.slice(0, days) : [];
+        return NextResponse.json({ timezone: data.timezone, lat: data.lat ?? lat, lon: data.lon ?? lon, current: data.current ?? null, daily });
+      }
+
+      // Fallback to the 5 day / 3 hour endpoint so forecast still works if OneCall is unavailable.
+      const fallbackUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=metric&appid=${key}`;
+      const fallbackResponse = await fetch(fallbackUrl);
+      const fallbackJson = await fallbackResponse.json();
+      if (!fallbackResponse.ok) {
+        return NextResponse.json({ error: fallbackJson?.message || "Weather forecast fetch failed" }, { status: 502 });
+      }
+
+      const grouped = new Map<string, { bucket: number[]; items: Array<Record<string, unknown>> }>();
+      (fallbackJson.list ?? []).forEach((item: Record<string, unknown>) => {
+        const dt = Number(item.dt ?? 0);
+        const date = new Date(dt * 1000).toISOString().split("T")[0];
+        const current = grouped.get(date) ?? { bucket: [], items: [] };
+        current.bucket.push(Number((item.main as { temp?: number })?.temp ?? 0));
+        current.items.push(item);
+        grouped.set(date, current);
+      });
+
+      const daily = Array.from(grouped.entries())
+        .slice(0, days)
+        .map(([, entry]) => {
+          const first = entry.items[0] as {
+            dt?: number;
+            weather?: Array<{ description?: string; main?: string; icon?: string; id?: number }>;
+            wind?: { speed?: number };
+            main?: { humidity?: number; pressure?: number };
+          };
+          return {
+            dt: first.dt,
+            temp: {
+              min: Math.min(...entry.bucket),
+              max: Math.max(...entry.bucket),
+              day: entry.bucket[Math.floor(entry.bucket.length / 2)] ?? entry.bucket[0],
+              night: entry.bucket[entry.bucket.length - 1] ?? entry.bucket[0],
+            },
+            weather: first.weather ?? [],
+            humidity: first.main?.humidity,
+            pressure: first.main?.pressure,
+            wind_speed: first.wind?.speed,
+          };
+        });
+
+      return NextResponse.json({ timezone: fallbackJson.city?.timezone ?? null, lat, lon, current: null, daily });
     }
 
     // default: return current weather (compatibility with existing callers)

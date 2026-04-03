@@ -1,7 +1,7 @@
 export const CROP_OPTIONS = [
   { id: "maize", label: "Maize", img: "https://images.unsplash.com/photo-1508061253142-4f6f2c2b3f4a?q=80&w=900&auto=format&fit=crop" },
   { id: "cassava", label: "Cassava", img: "https://images.unsplash.com/photo-1579621970563-ebec7560ff5d?q=80&w=900&auto=format&fit=crop" },
-  { id: "rice", label: "Rice", img: "https://unsplash.com/photos/white-rice-grains-on-brown-wooden-table--LdilhDx3sk" },
+  { id: "rice", label: "Rice", img: "https://images.unsplash.com/photo-1536304447766-da0ed4ce1b73?q=80&w=900&auto=format&fit=crop" },
   { id: "cowpea", label: "Cowpea", img: "https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=900&auto=format&fit=crop" },
   { id: "yam", label: "Yam", img: "https://images.unsplash.com/photo-1601004890684-d8cbf643f5f2?q=80&w=900&auto=format&fit=crop" },
   { id: "groundnut", label: "Groundnut", img: "https://images.unsplash.com/photo-1518976024611-6d04b6d1b9a5?q=80&w=900&auto=format&fit=crop" },
@@ -24,7 +24,7 @@ export const CROP_OPTIONS = [
   { id: "rubber", label: "Rubber", img: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=900&auto=format&fit=crop" },
   { id: "sugarcane", label: "Sugarcane", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=900&auto=format&fit=crop" },
   { id: "kola", label: "Kola Nut", img: "https://images.unsplash.com/photo-1597750094408-4b2a2b4a2c5f?q=80&w=900&auto=format&fit=crop" },
-  { id: "pine", label: "Plantain", img: "https://images.unsplash.com/photo-1516685018646-549eb5c4b8a3?q=80&w=900&auto=format&fit=crop" },
+  { id: "plantain", label: "Plantain", img: "https://images.unsplash.com/photo-1516685018646-549eb5c4b8a3?q=80&w=900&auto=format&fit=crop" },
   { id: "tea", label: "Tea", img: "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=900&auto=format&fit=crop" },
   { id: "coffee", label: "Coffee", img: "https://images.unsplash.com/photo-1516910817561-3d1f8d8f7b73?q=80&w=900&auto=format&fit=crop" },
   { id: "spinach", label: "Spinach", img: "https://images.unsplash.com/photo-1506806732259-39c2d0268443?q=80&w=900&auto=format&fit=crop" },

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       try {
         const clsRes = await fetch(`${base}/classification/query?lat=${lat}&lon=${lon}`);
         if (clsRes.ok) {
-          try { out.classification = await clsRes.json(); } catch (e) { out.classification = null; }
+          try { out.classification = await clsRes.json(); } catch { out.classification = null; }
         } else {
           const bodyText = await clsRes.text().catch(() => '');
           sgError = { stage: 'classification', status: clsRes.status, text: bodyText };
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
         const propRes = await fetch(`${base}/properties/query?lat=${lat}&lon=${lon}`);
         if (propRes.ok) {
-          try { out.properties = await propRes.json(); } catch (e) { out.properties = null; }
+          try { out.properties = await propRes.json(); } catch { out.properties = null; }
         } else {
           const bodyText = await propRes.text().catch(() => '');
           sgError = { stage: 'properties', status: propRes.status, text: bodyText };

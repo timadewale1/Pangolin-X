@@ -5,6 +5,7 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import WAVES from "vanta/dist/vanta.waves.min";
 import { LanguageProvider } from "@/context/LanguageContext";
+import PwaRegistrar from "@/components/PwaRegistrar";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const [vanta, setVanta] = useState<{ destroy: () => void } | null>(null);
@@ -30,6 +31,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         {/* Use the actual file in public/ - filename includes "-x" */}
         <link rel="icon" href="/Pangolin-x.png" />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <meta name="theme-color" content="#065f46" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta property="og:title" content="Pangolin-x - Climate Smart weather, Fragility & AI advisory for farmers" />
         <meta property="og:description" content="Local weather, Fragility forecasts and AI-driven crop advice for Nigerian farmers." />
         <meta property="og:image" content="/Pangolin-x.png" />
@@ -38,6 +43,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <div ref={ref} className="absolute inset-0 -z-10 pointer-events-none" />
         <LanguageProvider>
+          <PwaRegistrar />
           <div className="min-h-screen relative">
             {/* Keep nav inside pages to be able to use LanguageButton in the nav bar */}
             {children}

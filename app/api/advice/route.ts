@@ -2,6 +2,50 @@ import { NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
 import { fetchLocalNews } from "@/lib/news";
 import { adminDB } from "@/lib/firebaseAdmin";
+import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
+import type { AdvisoryResponse } from "@/lib/dashboard-types";
+
+function fallbackAdvisory(crops: string[], cropStages: Record<string, { stage?: string }> | undefined, condition: string, temp: string | number, lga: string, state: string): AdvisoryResponse {
+  return {
+    header: `Field-ready advisory for ${lga}, ${state}`,
+    generatedFor: `Current conditions: ${condition}, ${temp}C`,
+    executiveSummary: `Conditions in ${lga}, ${state} call for a cautious but active field posture. Keep labor focused on moisture management, crop observation, and timing-sensitive operations instead of broad untargeted applications.`,
+    priorityWindow: "Prioritize inspections early morning and confirm conditions again before any afternoon movement or spraying.",
+    regionalSignals: [
+      "Weather-driven field timing matters today",
+      "Soil moisture and drainage should guide decisions",
+      "Local disruption checks should happen before movement",
+    ],
+    items: crops.map((crop) => ({
+      crop,
+      headline: `Protect ${crop} against today's changing field conditions`,
+      summary: `Your ${crop} is at the ${cropStages?.[crop]?.stage ?? "unknown"} stage. Conditions look ${condition}, so focus on moisture management, input timing, and field movement decisions.`,
+      riskLevel: "moderate",
+      confidence: 68,
+      operationalPosture: "Stay active, but make field moves only after a quick condition check and labor prioritization review.",
+      whyNow: "The combination of crop stage and short-term weather can quickly turn a normal field operation into stress, wastage, or delayed recovery.",
+      inputFocus: "Use inputs selectively and avoid blanket applications until rainfall, wind, and field trafficability are clearer.",
+      fieldAccess: "Enter fields early where possible and avoid heavy movement on sections that are soft, flooded, or difficult to exit safely.",
+      expectedOutcome: "This approach should reduce wasted inputs, lower field losses, and preserve crop vigor through the next weather swing.",
+      actions: [
+        "Inspect the field early before committing labor or inputs.",
+        "Delay fertilizer or chemical application if rain or strong wind looks likely.",
+        "Prioritize drainage, mulching, and moisture conservation where needed.",
+      ],
+      watchouts: [
+        "Watch for waterlogging after heavy rainfall.",
+        "Avoid avoidable transport or field activity if local disruption signals rise.",
+      ],
+      timing: [
+        "Do the most sensitive field work in the early morning.",
+        "Recheck conditions before any late-day application or movement.",
+      ],
+      marketIntel: "No strong market signal was available at generation time.",
+      sourceTags: ["Weather", "Soil", "Local context"],
+      advice: "",
+    })),
+  };
+}
 
 export async function POST(req: Request) {
   try {
@@ -10,31 +54,18 @@ export async function POST(req: Request) {
     const weather = body.weather;
     const lang = body.lang;
     const cropStages: Record<string, { stage?: string }> | undefined = body.cropStages;
-    if (!crops || !weather || !body.state || !body.lga)
+    if (!crops || !weather || !body.state || !body.lga) {
       return NextResponse.json({ error: "Missing data (crops, weather, location)" }, { status: 400 });
+    }
 
-    // Get forecast date from request if present
     const forecastDate = body.forecastDate ? new Date(body.forecastDate) : null;
-
-    // support multiple weather shapes returned by weather API (onecall or /weather)
     const temp = forecastDate
       ? (weather?.temp?.day ?? weather?.temp?.max ?? weather?.temp ?? "unknown")
       : (weather?.current?.temp ?? weather?.main?.temp ?? weather?.temp ?? "unknown");
-
     const cond = forecastDate
       ? (weather?.weather?.[0]?.description ?? "clear skies")
       : (weather?.current?.weather?.[0]?.description ?? weather?.weather?.[0]?.description ?? "clear skies");
 
-    // Build per-crop stage string
-    let cropStageStr = "";
-    if (cropStages && typeof cropStages === "object") {
-      cropStageStr = crops.map((c: string) => `${c}: ${cropStages[c]?.stage || "unknown"}`).join(", ");
-    } else {
-      cropStageStr = crops.map((c: string) => `${c}: unknown`).join(", ");
-    }
-
-    // Fetch soil type data for this LGA via server-side admin SDK only.
-    // Do NOT call client Firestore helpers from server code to avoid permission errors.
     let soilData = null;
     try {
       const key = `${String(body.state)}|${String(body.lga)}`.toLowerCase();
@@ -42,15 +73,12 @@ export async function POST(req: Request) {
       if (ref) {
         const snap = await ref.get();
         if (snap && snap.exists) soilData = snap.data();
-      } else {
-        console.warn('adminDB not available for soilTypes lookup');
       }
-    } catch (e) {
-      console.warn('adminDB soilTypes read failed:', e);
+    } catch (error) {
+      console.warn("adminDB soilTypes read failed:", error);
     }
 
-    // Build soil type string for prompt
-    let soilInfo = 'Soil data not available';
+    let soilInfo = "Soil data not available";
     if (soilData) {
       soilInfo = `Primary type: ${soilData.type}`;
       if (soilData.traits) {
@@ -58,101 +86,123 @@ export async function POST(req: Request) {
         if (soilData.traits.texture) traits.push(`texture: ${soilData.traits.texture}`);
         if (soilData.traits.drainage) traits.push(`drainage: ${soilData.traits.drainage}`);
         if (soilData.traits.pH) traits.push(`pH: ${soilData.traits.pH}`);
-        if (traits.length) soilInfo += `\nTraits: ${traits.join(', ')}`;
+        if (traits.length) soilInfo += `\nTraits: ${traits.join(", ")}`;
       }
       if (soilData.nutrients) {
         const levels = [];
         if (soilData.nutrients.nitrogen) levels.push(`N: ${soilData.nutrients.nitrogen}`);
         if (soilData.nutrients.phosphorus) levels.push(`P: ${soilData.nutrients.phosphorus}`);
         if (soilData.nutrients.potassium) levels.push(`K: ${soilData.nutrients.potassium}`);
-        if (levels.length) soilInfo += `\nNutrient levels: ${levels.join(', ')}`;
+        if (levels.length) soilInfo += `\nNutrient levels: ${levels.join(", ")}`;
       }
-      if (soilData.description) {
-        soilInfo += `\nDetails: ${soilData.description}`;
-      }
+      if (soilData.description) soilInfo += `\nDetails: ${soilData.description}`;
     }
 
-    // Attempt to fetch local news (48h) for the farmer's LGA or state and include it in the prompt
-    let newsSummary = 'No recent local news found.';
+    let newsSummary = "No recent local news found.";
     try {
-      const q = (body.lga as string) || (body.state as string) || '';
-      const news = q ? await fetchLocalNews(q, 5) : null;
+      const query = (body.lga as string) || (body.state as string) || "";
+      const news = query ? await fetchLocalNews(query, 5) : null;
       if (news && news.length > 0) {
-        newsSummary = news.map((n: { title: string; source?: string; url?: string }) => `${n.title}${n.source ? ` (Source: ${n.source})` : ''}${n.url ? ` - ${n.url}` : ''}`).join('\n');
+        newsSummary = news
+          .map((item: { title: string; source?: string; url?: string }) => `${item.title}${item.source ? ` (Source: ${item.source})` : ""}${item.url ? ` - ${item.url}` : ""}`)
+          .join("\n");
       }
-    } catch (e) {
-      console.warn('news fetch failed', e);
+    } catch (error) {
+      console.warn("news fetch failed", error);
     }
 
-    const prompt = `You are an AI Agro-Meteorological Advisory Assistant designed to provide ${forecastDate ? 'forecast' : 'daily'}, location-based, crop-specific, and climate-risk-sensitive advisories for farmers in Nigeria. Your insights combine ${forecastDate ? 'weather forecast data' : 'real-time weather data'}, local news intelligence (last 48 hours), and institutional alerts from NIMET, NEMA, NIHSA, and SEMA. Your responses must be accurate, actionable, localized, and written in clear, farmer-friendly language (translate into the requested language if needed).
+    const prompt = `You are Pangolin-X Advisory AI, a premium agro-meteorological field copilot for Nigerian farmers.
 
-Produce ONLY a JSON object (no extra text) with this exact shape:\n\n{\n  "header": string, // short header line\n  "items": [ { "crop": string, "advice": string } ] // one entry per crop\n}\n\nRequirements:\n- Use simple, clear, layman language suitable for Nigerian smallholder farmers.\n- For each crop, tie the advice to: crop type, crop stage, current weather, AND the farmer's location (LGA). Mention condition (e.g., rainy, dry, hot, windy) and the stage, and give 2-4 short actionable steps (planting, irrigation, weeding, spraying, fertilization, protection).\n- Include climate-risk sensitive recommendations (staking/mulching for high wind, delay chemicals before heavy rain, shading for heat, erosion control for floods).\n- Where relevant, include a short "News intelligence" sentence if there is recent local news (last 48 hours) about pests/disease, floods/droughts, displacement, or market disruptions. If included, add a short source tag (e.g., "Source: <name>").\n- Translate the advice into ${lang || 'English'}.\n\nData available:\n- Crops: ${crops.join(', ')}\n- ${forecastDate ? `Forecast for ${forecastDate.toLocaleDateString()}: ${temp}°C, ${cond}` : `Current weather: ${temp}°C, ${cond}`}\n- Crop stages: ${cropStageStr}\n- Location (LGA): ${body.lga}, ${body.state}\n- Soil information:\n${soilInfo}\n\nRecent local news (last 48h):\n${newsSummary}\n\nReturn only valid JSON that matches the shape above. Do not add any commentary or extra fields.`;
+Return ONLY valid JSON in this exact shape:
+{
+  "header": "string",
+  "generatedFor": "string",
+  "executiveSummary": "string",
+  "priorityWindow": "string",
+  "regionalSignals": ["string", "string"],
+  "items": [
+    {
+      "crop": "string",
+      "headline": "string",
+      "summary": "string",
+      "riskLevel": "low|moderate|high",
+      "confidence": 0,
+      "operationalPosture": "string",
+      "whyNow": "string",
+      "inputFocus": "string",
+      "fieldAccess": "string",
+      "expectedOutcome": "string",
+      "actions": ["string", "string", "string"],
+      "watchouts": ["string", "string"],
+      "timing": ["string", "string"],
+      "marketIntel": "string",
+      "sourceTags": ["string", "string"],
+      "advice": "string"
+    }
+  ]
+}
+
+Rules:
+- Make the response feel premium, tactical, and decision-grade, not generic.
+- Write in clear farmer-friendly ${lang || "English"}.
+- Open with a concise executive summary for the whole farm, not just crop-by-crop notes.
+- Identify the most important action window in "priorityWindow".
+- "regionalSignals" should capture 2 to 4 short signals from weather, mobility, market, flood, pest, conflict, or input access context.
+- Every crop item must feel localized to ${body.lga}, ${body.state}.
+- Tie each crop recommendation to crop stage, weather, soil, and local risk context.
+- "headline" should be a sharp one-line recommendation.
+- "summary" should be a concise but detailed explanation.
+- "operationalPosture" should say the practical stance to take for the crop today or this week.
+- "whyNow" should explain why the recommendation matters at this moment.
+- "inputFocus" should say what to do or avoid with fertilizer, chemicals, seed, irrigation, or labor.
+- "fieldAccess" should mention movement, access, drainage, or work-window realities.
+- "expectedOutcome" should briefly describe the benefit if the farmer follows the plan.
+- "actions" must contain 3 to 5 concrete next steps.
+- "watchouts" must contain 2 or 3 avoidable mistakes or threats.
+- "timing" must say when to act today / this week.
+- "marketIntel" should mention any relevant local supply, movement, pest, flood, conflict, or input-access signal. If nothing strong exists, say so briefly.
+- "sourceTags" should be short labels like Weather, Soil, News, NiMet, NEMA, NIHSA, Local context.
+- "advice" should be a polished compact narrative version of the recommendation.
+- Confidence should be an integer between 45 and 95.
+- Do not include markdown or any text outside the JSON.
+
+Context:
+- Crops: ${crops.join(", ")}
+- Crop stages: ${crops.map((crop) => `${crop}: ${cropStages?.[crop]?.stage || "unknown"}`).join(", ")}
+- ${forecastDate ? `Forecast date: ${forecastDate.toLocaleDateString()}` : "Advice type: current conditions"}
+- Weather: ${temp}C, ${cond}
+- Location: ${body.lga}, ${body.state}
+- Soil information:
+${soilInfo}
+
+Recent local news and signals:
+${newsSummary}`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-      max_tokens: 700,
+      temperature: 0.35,
+      max_tokens: 1300,
     });
 
     const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
-
-    // Try to parse JSON safely. If model returns code fences or extra text, extract JSON block.
-    let jsonText = text;
     const jsonMatch = text.match(/\{[\s\S]*\}$/m);
-    if (jsonMatch) jsonText = jsonMatch[0];
+    const parsedPayload = parseAdvisoryPayload(JSON.parse(jsonMatch ? jsonMatch[0] : text));
+    const advisory = parsedPayload ?? fallbackAdvisory(crops, cropStages, String(cond), temp, String(body.lga), String(body.state));
+    const normalized = {
+      ...advisory,
+      items: advisory.items.map((item) => ({
+        ...item,
+        advice: item.advice || `${item.headline} ${item.summary}`.trim(),
+      })),
+    };
 
-    try {
-      const parsed = JSON.parse(jsonText);
-      // Basic validation
-      if (!parsed || !Array.isArray(parsed.items)) {
-        throw new Error('Invalid advice format from AI');
-      }
-      // ensure items map to crops requested; if model returned fewer, pad with empty advice
-      const rawItems = (parsed.items as { crop: string; advice: string }[]).map((it) => ({ crop: it.crop, advice: it.advice }));
-      const header = parsed.header ?? `Here's the latest advice based on ${cond} and crop stages.`;
-
-      // Enforce strict opening line for each item's advice. If AI did not follow exactly, prefix it server-side.
-      const normalizedItems = rawItems.map((it) => {
-        const cropName = it.crop || '';
-        const stage = (cropStages && cropStages[cropName]?.stage) || 'unknown';
-        const weatherPhrase = cond || 'current weather';
-        const requiredIntro = `Here is the advisory for your ${cropName} based on the soil data available and the ${stage} and the ${weatherPhrase} in your area.`;
-        const adviceText = (it.advice || '').trim();
-        if (adviceText.startsWith(requiredIntro)) return { crop: cropName, advice: adviceText };
-        // If AI output omitted or varied, prefix the required intro exactly once
-        const fixed = `${requiredIntro} ${adviceText}`.trim();
-        return { crop: cropName, advice: fixed };
-      });
-
-      // If a language is requested other than English, translate the entire advisory (including intro)
-      if (lang && String(lang).toLowerCase() !== 'en') {
-        try {
-          for (let i = 0; i < normalizedItems.length; i++) {
-            const it = normalizedItems[i];
-            const fullText = (it.advice || '').trim();
-            if (!fullText) continue;
-
-            const trPrompt = `Translate the following advisory into ${lang}. Return only the translated text and nothing else. Preserve numbers, units, and measurements as-is. Do not add commentary. Text:\n\n${fullText}`;
-            const trRes = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: trPrompt }], temperature: 0.0, max_tokens: 900 });
-            const trText = trRes.choices?.[0]?.message?.content?.trim() ?? '';
-            if (trText) {
-              normalizedItems[i] = { crop: it.crop, advice: trText };
-            }
-          }
-        } catch (e) {
-          console.warn('translation step failed, returning original language', e);
-        }
-      }
-
-      return NextResponse.json({ header, items: normalizedItems });
-    } catch (e) {
-      console.error('AI JSON parse error:', e, 'raw:', text);
-      // fallback: return plain advice string
-      return NextResponse.json({ advice: text });
-    }
-  } catch (err) {
-    console.error("AI Advisory Error:", err);
+    return NextResponse.json({
+      ...normalized,
+      advice: renderAdvisoryText(normalized),
+    });
+  } catch (error) {
+    console.error("AI Advisory Error:", error);
     return NextResponse.json({ error: "Failed to fetch AI advice" }, { status: 500 });
   }
 }

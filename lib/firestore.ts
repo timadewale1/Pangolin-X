@@ -41,6 +41,8 @@ export interface AdvisoryData extends BaseAdvisoryData {
   // forgiving during migration.
   advice?: string;
   advisory?: string;
+  header?: string;
+  details?: unknown;
 }
 
 // Forecast advisory with future date and recommendations
@@ -50,6 +52,8 @@ export interface ForecastAdvisoryData extends BaseAdvisoryData {
   
   // The advisory text for the forecast date
   advice: string;
+  header?: string;
+  details?: unknown;
   
   // Original forecast weather data that was used
   forecastWeather: Record<string, unknown>;

@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     const origin = headersList.get('origin');
     console.log('[paystack/verify] POST request - Origin:', origin, 'Headers:', Object.fromEntries(headersList.entries()));
 
-    if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    if (origin && !ALLOWED_ORIGINS.includes(origin)) {
       console.warn('[paystack/verify] Origin not allowed:', origin);
       return createResponse(
         { success: false, message: 'Origin not allowed' },
