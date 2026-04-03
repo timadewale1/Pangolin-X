@@ -3,6 +3,7 @@ import { openai } from "@/lib/openai";
 import { fetchLocalNews } from "@/lib/news";
 import { getNigeriaZone, NIGERIA_ZONE_ORDER } from "@/lib/nigeria-zones";
 import type { FragilityReport, FragilitySource } from "@/lib/dashboard-types";
+import { getLanguageLabel } from "@/lib/language";
 
 function clampScore(input: unknown, fallback: number) {
   const value = Number(input);
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const lga = body.lga ?? null;
     const state = body.state ?? null;
-    const lang = body.lang ?? "English";
+    const lang = getLanguageLabel(body.lang);
     const zone = getNigeriaZone(state);
 
     const news = (await fetchLocalNews(String(lga || state || "Nigeria"), 5)) ?? [];

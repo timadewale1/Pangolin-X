@@ -4,6 +4,7 @@ import { fetchLocalNews } from "@/lib/news";
 import { adminDB } from "@/lib/firebaseAdmin";
 import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
 import type { AdvisoryResponse } from "@/lib/dashboard-types";
+import { getLanguageLabel } from "@/lib/language";
 
 function fallbackAdvisory(crops: string[], cropStages: Record<string, { stage?: string }> | undefined, condition: string, temp: string | number, lga: string, state: string): AdvisoryResponse {
   return {
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const crops: string[] = body.crops ?? [];
     const weather = body.weather;
-    const lang = body.lang;
+    const lang = getLanguageLabel(body.lang);
     const cropStages: Record<string, { stage?: string }> | undefined = body.cropStages;
     if (!crops || !weather || !body.state || !body.lga) {
       return NextResponse.json({ error: "Missing data (crops, weather, location)" }, { status: 400 });

@@ -86,11 +86,11 @@ export async function addForecastAdvisory(uid: string, data: ForecastAdvisoryDat
   await addDoc(ref, { ...data, createdAt: serverTimestamp() });
 }
 
-export async function fetchAdvisories(uid: string, count: number = 10) {
+export async function fetchAdvisories(uid: string, count: number = 10): Promise<Array<AdvisoryData & { id: string }>> {
   const ref = collection(db, "farmers", uid, "advisories");
   const q = query(ref, orderBy("createdAt", "desc"), limit(count));
   const snap = await getDocs(q);
-  return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as AdvisoryData) }));
 }
 
 // Fetch forecast advisories for a specific date range

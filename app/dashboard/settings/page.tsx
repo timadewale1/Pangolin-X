@@ -4,13 +4,17 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import RenewalModal from "@/components/ui/RenewalModal";
 import { useDashboard } from "@/context/DashboardContext";
+import { LANGUAGE_OPTIONS } from "@/lib/language";
 import { NIGERIA_STATES_LGAS } from "@/lib/nigeriaData";
+import type { Lang } from "@/lib/translations";
 
 export default function SettingsPage() {
-  const { farm, planLabel, saveLocation, uploadPhoto, refreshFarmer } = useDashboard();
+  const { farm, planLabel, saveLocation, saveLanguage, uploadPhoto, refreshFarmer } = useDashboard();
   const [state, setState] = useState(farm?.state ?? "");
   const [lga, setLga] = useState(farm?.lga ?? "");
+  const [language, setLanguage] = useState<Lang>((farm?.language as Lang) ?? "en");
   const [saving, setSaving] = useState(false);
+  const [savingLanguage, setSavingLanguage] = useState(false);
   const [renewalOpen, setRenewalOpen] = useState(false);
 
   const lgas = useMemo(() => NIGERIA_STATES_LGAS[state] ?? [], [state]);
@@ -18,7 +22,8 @@ export default function SettingsPage() {
   useEffect(() => {
     setState(farm?.state ?? "");
     setLga(farm?.lga ?? "");
-  }, [farm?.state, farm?.lga]);
+    setLanguage((farm?.language as Lang) ?? "en");
+  }, [farm?.state, farm?.lga, farm?.language]);
 
   return (
     <div className="space-y-6">
@@ -89,6 +94,42 @@ export default function SettingsPage() {
           className="mt-5 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
         >
           {saving ? "Saving..." : "Save location"}
+        </button>
+      </section>
+
+      <section className="rounded-[2rem] border border-emerald-100 bg-white p-6 shadow-sm">
+        <p className="text-sm uppercase tracking-[0.22em] text-emerald-600">Language Settings</p>
+        <h2 className="mt-2 text-2xl font-semibold text-slate-900">Farmer advisory language</h2>
+        <p className="mt-2 text-sm text-slate-600">Changing this updates the language used for advisory and fragility generation across the new dashboard routes.</p>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {LANGUAGE_OPTIONS.map((option) => (
+            <button
+              key={option.code}
+              onClick={() => setLanguage(option.code)}
+              className={`rounded-[1.25rem] border px-4 py-4 text-left transition ${
+                language === option.code
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                  : "border-emerald-100 bg-white text-slate-700 hover:border-emerald-300"
+              }`}
+            >
+              <div className="text-sm font-semibold">{option.label}</div>
+              <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">{option.code}</div>
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={async () => {
+            setSavingLanguage(true);
+            try {
+              await saveLanguage(language);
+            } finally {
+              setSavingLanguage(false);
+            }
+          }}
+          disabled={savingLanguage || language === ((farm?.language as Lang) ?? "en")}
+          className="mt-5 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+        >
+          {savingLanguage ? "Saving..." : "Save language"}
         </button>
       </section>
 

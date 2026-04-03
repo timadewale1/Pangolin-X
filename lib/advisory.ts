@@ -32,7 +32,7 @@ export function parseAdvisoryPayload(payload: unknown): AdvisoryResponse | null 
   if (!Array.isArray(candidate.items) || candidate.items.length === 0) return null;
 
   const items = candidate.items
-    .map((item) => {
+    .map((item): AdvisoryDetail | null => {
       if (!item || typeof item !== "object") return null;
       const source = item as Record<string, unknown>;
       const crop = String(source.crop ?? "").trim();
@@ -57,9 +57,9 @@ export function parseAdvisoryPayload(payload: unknown): AdvisoryResponse | null 
         marketIntel: String(source.marketIntel ?? "").trim() || undefined,
         sourceTags: toStringArray(source.sourceTags),
         advice: advice || `${headline}\n${summary}`,
-      } satisfies AdvisoryDetail;
+      };
     })
-    .filter((item): item is AdvisoryDetail => Boolean(item));
+    .filter((item): item is AdvisoryDetail => item !== null);
 
   if (items.length === 0) return null;
 

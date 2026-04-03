@@ -111,6 +111,14 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   try {
+    if (!db || !adminAuth) {
+      return createResponse(
+        { success: false, message: 'Firebase admin is not configured' },
+        503,
+        null
+      );
+    }
+
     // Log incoming request metadata for debugging
     const headersList = await headers();
     const origin = headersList.get('origin');

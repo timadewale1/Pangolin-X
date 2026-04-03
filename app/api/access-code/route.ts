@@ -9,6 +9,10 @@ const DEFAULT_MAX_USES = 50;
 
 export async function POST(req: Request) {
   try {
+    if (!db) {
+      return NextResponse.json({ valid: false, message: "Firebase admin is not configured" }, { status: 503 });
+    }
+
     const body = await req.json();
     const { code } = body;
 

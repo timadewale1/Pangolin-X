@@ -8,6 +8,7 @@ import { signOut } from "firebase/auth";
 import { auth, db, storage } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import type { FarmerDoc } from "@/lib/dashboard-types";
+import type { Lang } from "@/lib/translations";
 
 type DashboardContextValue = {
   user: ReturnType<typeof useAuth>["user"];
@@ -19,6 +20,7 @@ type DashboardContextValue = {
   planLabel: string | null;
   refreshFarmer: () => Promise<FarmerDoc | null>;
   saveLocation: (state: string, lga: string) => Promise<void>;
+  saveLanguage: (language: Lang) => Promise<void>;
   saveCrops: (crops: string[]) => Promise<void>;
   saveCropStatus: (cropStatus: Record<string, { stage?: string; plantedAt?: string }>) => Promise<void>;
   uploadPhoto: (file: File) => Promise<string | null>;
@@ -91,6 +93,17 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setFarm((current) => (current ? { ...current, state, lga } : current));
   }, [user]);
 
+  const saveLanguage = useCallback(async (language: Lang) => {
+    if (!user) return;
+    await updateDoc(doc(db, "farmers", user.uid), { language });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("pangolin-lang", language);
+      localStorage.setItem("pangolin_lang", language);
+      localStorage.setItem("pangolin-lang-chosen", "true");
+    }
+    setFarm((current) => (current ? { ...current, language } : current));
+  }, [user]);
+
   const saveCrops = useCallback(async (crops: string[]) => {
     if (!user) return;
     await updateDoc(doc(db, "farmers", user.uid), { crops });
@@ -142,12 +155,13 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       planLabel: getPlanLabel(farm),
       refreshFarmer,
       saveLocation,
+      saveLanguage,
       saveCrops,
       saveCropStatus,
       uploadPhoto,
       logout,
     }),
-    [user, authLoading, farm, loading, refreshFarmer, saveLocation, saveCrops, saveCropStatus, uploadPhoto, logout]
+    [user, authLoading, farm, loading, refreshFarmer, saveLocation, saveLanguage, saveCrops, saveCropStatus, uploadPhoto, logout]
   );
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
