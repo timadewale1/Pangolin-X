@@ -10,6 +10,7 @@ export async function POST(req: Request) {
     const weather = body.weather;
     const lang = body.lang;
     const cropStages: Record<string, { stage?: string }> | undefined = body.cropStages;
+    const cropGrowth: Record<string, { plantedAt?: string; daysPlanted?: number | null; phaseLabel?: string; harvestReady?: boolean }> | undefined = body.cropGrowth;
     if (!crops || !weather || !body.state || !body.lga)
       return NextResponse.json({ error: "Missing data (crops, weather, location)" }, { status: 400 });
 
@@ -32,6 +33,12 @@ export async function POST(req: Request) {
     } else {
       cropStageStr = crops.map((c: string) => `${c}: unknown`).join(", ");
     }
+    const cropGrowthStr = cropGrowth && typeof cropGrowth === "object"
+      ? crops.map((c: string) => {
+          const g = cropGrowth[c];
+          return `${c}: planted ${g?.daysPlanted ?? "unknown"} days ago, phase ${g?.phaseLabel || "unknown"}${g?.harvestReady ? ", harvest ready" : ""}`;
+        }).join(", ")
+      : "No planted-date data provided.";
 
     // Fetch soil type data for this LGA via server-side admin SDK only.
     // Do NOT call client Firestore helpers from server code to avoid permission errors.
@@ -86,7 +93,7 @@ export async function POST(req: Request) {
 
     const prompt = `You are an AI Agro-Meteorological Advisory Assistant designed to provide ${forecastDate ? 'forecast' : 'daily'}, location-based, crop-specific, and climate-risk-sensitive advisories for farmers in Nigeria. Your insights combine ${forecastDate ? 'weather forecast data' : 'real-time weather data'}, local news intelligence (last 48 hours), and institutional alerts from NIMET, NEMA, NIHSA, and SEMA. Your responses must be accurate, actionable, localized, and written in clear, farmer-friendly language (translate into the requested language if needed).
 
-Produce ONLY a JSON object (no extra text) with this exact shape:\n\n{\n  "header": string, // short header line\n  "items": [ { "crop": string, "advice": string } ] // one entry per crop\n}\n\nRequirements:\n- Use simple, clear, layman language suitable for Nigerian smallholder farmers.\n- For each crop, tie the advice to: crop type, crop stage, current weather, AND the farmer's location (LGA). Mention condition (e.g., rainy, dry, hot, windy) and the stage, and give 2-4 short actionable steps (planting, irrigation, weeding, spraying, fertilization, protection).\n- Include climate-risk sensitive recommendations (staking/mulching for high wind, delay chemicals before heavy rain, shading for heat, erosion control for floods).\n- Where relevant, include a short "News intelligence" sentence if there is recent local news (last 48 hours) about pests/disease, floods/droughts, displacement, or market disruptions. If included, add a short source tag (e.g., "Source: <name>").\n- Translate the advice into ${lang || 'English'}.\n\nData available:\n- Crops: ${crops.join(', ')}\n- ${forecastDate ? `Forecast for ${forecastDate.toLocaleDateString()}: ${temp}°C, ${cond}` : `Current weather: ${temp}°C, ${cond}`}\n- Crop stages: ${cropStageStr}\n- Location (LGA): ${body.lga}, ${body.state}\n- Soil information:\n${soilInfo}\n\nRecent local news (last 48h):\n${newsSummary}\n\nReturn only valid JSON that matches the shape above. Do not add any commentary or extra fields.`;
+Produce ONLY a JSON object (no extra text) with this exact shape:\n\n{\n  "header": string, // short header line\n  "items": [ { "crop": string, "advice": string } ] // one entry per crop\n}\n\nRequirements:\n- Use simple, clear, layman language suitable for Nigerian smallholder farmers.\n- For each crop, tie the advice to: crop type, crop stage, current weather, AND the farmer's location (LGA). Mention condition (e.g., rainy, dry, hot, windy) and the stage, and give 2-4 short actionable steps (planting, irrigation, weeding, spraying, fertilization, protection).\n- Include climate-risk sensitive recommendations (staking/mulching for high wind, delay chemicals before heavy rain, shading for heat, erosion control for floods).\n- Where relevant, include a short "News intelligence" sentence if there is recent local news (last 48 hours) about pests/disease, floods/droughts, displacement, or market disruptions. If included, add a short source tag (e.g., "Source: <name>").\n- Translate the advice into ${lang || 'English'}.\n\nData available:\n- Crops: ${crops.join(', ')}\n- ${forecastDate ? `Forecast for ${forecastDate.toLocaleDateString()}: ${temp}°C, ${cond}` : `Current weather: ${temp}°C, ${cond}`}\n- Crop stages: ${cropStageStr}\n- Crop growth: ${cropGrowthStr}\n- Location (LGA): ${body.lga}, ${body.state}\n- Soil information:\n${soilInfo}\n\nRecent local news (last 48h):\n${newsSummary}\n\nReturn only valid JSON that matches the shape above. Do not add any commentary or extra fields.`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -156,3 +163,5 @@ Produce ONLY a JSON object (no extra text) with this exact shape:\n\n{\n  "heade
     return NextResponse.json({ error: "Failed to fetch AI advice" }, { status: 500 });
   }
 }
+
+

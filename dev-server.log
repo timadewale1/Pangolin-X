@@ -1,0 +1,124 @@
+
+> pangolin-x@0.1.0 dev
+> cross-env NODE_OPTIONS="--max-old-space-size=4096" next dev
+
+   ▲ Next.js 15.5.7
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.243.206:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 7.8s
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard/my-crops in 28.2s (2257 modules)
+ GET /dashboard/my-crops 200 in 9354ms
+ GET /sw.js 404 in 22854ms
+ ✓ Compiled in 2.3s (2271 modules)
+ ✓ Compiled in 1963ms (2271 modules)
+ ○ Compiling /dashboard/forecast-advisory ...
+ ✓ Compiled /dashboard/forecast-advisory in 2.6s (2042 modules)
+ GET /dashboard/fragility-history 200 in 4358ms
+ GET /dashboard/forecast-advisory 200 in 4089ms
+ GET /dashboard/advisory-history 200 in 4359ms
+ ○ Compiling /api/soilgrids ...
+ ✓ Compiled /api/soilgrids in 2.4s (2113 modules)
+ POST /api/soilgrids 200 in 20022ms
+ POST /api/soilgrids 200 in 39ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 822ms (1341 modules)
+ GET /sw.js 404 in 1296ms
+ ○ Compiling /dashboard/advisory-history ...
+ ✓ Compiled /dashboard/advisory-history in 714ms (1053 modules)
+ GET /dashboard/advisory-history 200 in 2039ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 1032ms (2035 modules)
+ GET /sw.js 404 in 1376ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 1874ms (1283 modules)
+ GET /dashboard 200 in 2262ms
+ ○ Compiling /api/weather ...
+ ✓ Compiled /api/weather in 2.2s (2283 modules)
+ POST /api/weather 200 in 3915ms
+ POST /api/weather 200 in 3980ms
+ POST /api/weather 200 in 253ms
+ ○ Compiling /api/soilgrids ...
+ ✓ Compiled /api/soilgrids in 1692ms (1367 modules)
+ POST /api/soilgrids 200 in 21197ms
+ ○ Compiling /api/soilgrids/save ...
+ ✓ Compiled /api/soilgrids/save in 843ms (2352 modules)
+[firebase-admin] ✅ Initialized successfully
+ POST /api/weather 200 in 794ms
+ POST /api/soilgrids/save 500 in 10015ms
+ ○ Compiling /dashboard/my-crops ...
+ ✓ Compiled /dashboard/my-crops in 546ms (1311 modules)
+ GET /dashboard/my-crops 200 in 819ms
+ GET /dashboard 200 in 115ms
+ POST /api/weather 200 in 685ms
+ POST /api/weather 200 in 714ms
+ POST /api/weather 200 in 227ms
+ GET /dashboard/advisory-history 200 in 73ms
+ GET /dashboard/my-crops 200 in 47ms
+ ○ Compiling /dashboard/fragility-risk-advisory ...
+ ✓ Compiled /dashboard/fragility-risk-advisory in 4.5s (2292 modules)
+ GET /dashboard/fragility-risk-advisory 200 in 4941ms
+ GET /dashboard/fragility-risk-advisory 200 in 162ms
+ ○ Compiling /api/fragility ...
+ ✓ Compiled /api/fragility in 3.2s (2404 modules)
+ POST /api/fragility 200 in 8961ms
+ ○ Compiling /dashboard/fragility-history ...
+ ✓ Compiled /dashboard/fragility-history in 834ms (1431 modules)
+ GET /dashboard/fragility-history 200 in 1082ms
+ ○ Compiling /dashboard/forecast-advisory ...
+ ✓ Compiled /dashboard/forecast-advisory in 614ms (1435 modules)
+ GET /dashboard/forecast-advisory 200 in 939ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 3.9s (2298 modules)
+ GET /sw.js 404 in 4644ms
+ GET /dashboard/forecast-advisory 200 in 821ms
+ GET /dashboard 200 in 101ms
+ ○ Compiling /api/weather ...
+ ✓ Compiled /api/weather in 834ms (1320 modules)
+ POST /api/weather 200 in 1811ms
+ POST /api/weather 200 in 1860ms
+ POST /api/weather 200 in 250ms
+ ○ Compiling /dashboard/settings ...
+ ✓ Compiled /dashboard/settings in 2.1s (2301 modules)
+ GET /dashboard/settings 200 in 2581ms
+ GET /dashboard/settings 200 in 84ms
+ GET /dashboard 200 in 105ms
+ ○ Compiling /api/weather ...
+ ✓ Compiled /api/weather in 1054ms (1325 modules)
+ POST /api/weather 200 in 2225ms
+ POST /api/weather 200 in 2156ms
+ POST /api/weather 200 in 501ms
+ GET /dashboard/settings 200 in 426ms
+ ○ Compiling /api/soilgrids ...
+ ✓ Compiled /api/soilgrids in 2.1s (1390 modules)
+ POST /api/soilgrids 200 in 18968ms
+ ○ Compiling /api/soilgrids/save ...
+ ✓ Compiled /api/soilgrids/save in 1000ms (1388 modules)
+ POST /api/soilgrids/save 500 in 3560ms
+ GET /dashboard 200 in 157ms
+ POST /api/weather 200 in 842ms
+ POST /api/weather 200 in 793ms
+ POST /api/weather 200 in 293ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 1794ms (2305 modules)
+ GET /sw.js 404 in 2463ms
+ GET /dashboard/fragility-risk-advisory 200 in 108ms
+ ○ Compiling /api/fragility ...
+ ✓ Compiled /api/fragility in 1312ms (1432 modules)
+ POST /api/fragility 200 in 127765ms
+ GET /dashboard/fragility-risk-advisory 200 in 1344ms
+ GET /dashboard/fragility-risk-advisory 200 in 433ms
+ GET /sw.js 404 in 284ms
+ GET /dashboard 200 in 77ms
+ POST /api/weather 200 in 751ms
+ POST /api/weather 200 in 745ms
+ POST /api/weather 200 in 268ms
+ GET /dashboard/fragility-history 200 in 131ms
+ GET /sw.js 404 in 176ms
+ GET /dashboard/fragility-risk-advisory 200 in 68ms
+ POST /api/fragility 200 in 5428ms
+ POST /api/fragility 200 in 60487ms
+ GET /sw.js 404 in 117ms

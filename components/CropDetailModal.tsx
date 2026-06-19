@@ -18,7 +18,7 @@ type Weather = {
 
 interface CropDetailModalProps {
   open: boolean;
-  crop?: { id: string; name: string; stage?: string };
+  crop?: { id: string; name: string; stage?: string; plantedAt?: string; growth?: { daysPlanted: number | null; phaseLabel: string; harvestReady: boolean } };
   weather?: Weather | null;
   onClose: () => void;
   lang: string;
@@ -35,6 +35,8 @@ export default function CropDetailModal({ open, crop, weather, onClose, lang, on
     // Capture values so the async closure doesn't see 'crop' as possibly undefined.
     const cropId = crop.id;
     const cropStageVal = crop.stage ?? "unknown";
+    const cropPlantedAt = crop.plantedAt;
+    const cropGrowthVal = crop.growth;
     let cancelled = false;
     async function fetchAdvice() {
       setAdvice("");
@@ -44,7 +46,7 @@ export default function CropDetailModal({ open, crop, weather, onClose, lang, on
       const res = await fetch('/api/advice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ crops: [cropId], weather, lang, cropStages }),
+        body: JSON.stringify({ crops: [cropId], weather, lang, cropStages, cropGrowth: { [cropId]: { plantedAt: cropPlantedAt, ...(cropGrowthVal ?? {}) } } }),
       });
       let j: unknown = null;
       try {

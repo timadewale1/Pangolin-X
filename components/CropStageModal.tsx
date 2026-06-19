@@ -40,6 +40,23 @@ export default function CropStageModal({ open, onClose, crops, uid, onSaved, cro
     }
     return init;
   });
+  const [plantedDays, setPlantedDays] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    try {
+      if (Array.isArray(crops) && cropStatus) {
+        crops.forEach((c) => {
+          const plantedAt = cropStatus[c.id]?.plantedAt;
+          if (plantedAt) {
+            const diff = Math.max(0, Math.floor((Date.now() - new Date(plantedAt).getTime()) / 86400000));
+            init[c.id] = String(diff);
+          }
+        });
+      }
+    } catch {
+      // ignore
+    }
+    return init;
+  });
   const [loading, setLoading] = useState(false);
 
   const cropStages = [
@@ -54,6 +71,10 @@ export default function CropStageModal({ open, onClose, crops, uid, onSaved, cro
     setSelectedStages((prev) => ({ ...prev, [cropId]: stage }));
   };
 
+  const handleDaysChange = (cropId: string, value: string) => {
+    setPlantedDays((prev) => ({ ...prev, [cropId]: value }));
+  };
+
   const handleSave = async () => {
     if (!uid) return;
     setLoading(true);
@@ -61,7 +82,11 @@ export default function CropStageModal({ open, onClose, crops, uid, onSaved, cro
       // normalize selectedStages to the expected shape: { cropId: { stage, plantedAt? } }
       const normalized: Record<string, { stage?: string; plantedAt?: string }> = {};
       Object.keys(selectedStages).forEach((k) => {
-        normalized[k] = { stage: selectedStages[k] };
+        const days = plantedDays[k] ? Number(plantedDays[k]) : NaN;
+        const plantedAt = Number.isFinite(days) && days >= 0
+          ? new Date(Date.now() - days * 86400000).toISOString()
+          : merged[k]?.plantedAt;
+        normalized[k] = { stage: selectedStages[k], plantedAt };
       });
 
       const farmerRef = doc(db, "farmers", uid);
@@ -73,7 +98,10 @@ export default function CropStageModal({ open, onClose, crops, uid, onSaved, cro
         merged = { ...(data.cropStatus ?? {}) };
       }
       Object.keys(normalized).forEach((k) => {
-        merged[k] = normalized[k];
+        merged[k] = {
+          stage: normalized[k].stage,
+          plantedAt: merged[k]?.plantedAt ?? normalized[k].plantedAt ?? new Date().toISOString(),
+        };
       });
 
       await updateDoc(farmerRef, { cropStatus: merged });
@@ -122,6 +150,19 @@ export default function CropStageModal({ open, onClose, crops, uid, onSaved, cro
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-2">
+                  <div className="rounded-lg border border-green-100 bg-white p-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      {t("days_planted") || "Days planted"}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={plantedDays[crop.id] ?? ""}
+                      onChange={(e) => handleDaysChange(crop.id, e.target.value)}
+                      placeholder="e.g. 14"
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-green-500"
+                    />
+                  </div>
                   {cropStages.map((s) => (
                     <button
                       key={s.stage}

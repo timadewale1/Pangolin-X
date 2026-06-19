@@ -25,6 +25,7 @@ import CropEditorModal from "@/components/CropEditorModal";
 import CropDetailModal from "@/components/CropDetailModal";
 import CropStageModal from "@/components/CropStageModal";
 import { CROP_OPTIONS } from "@/lib/crops";
+import { getCropGrowthInfo, type CropGrowthInfo } from "@/lib/cropGrowth";
 import { addAdvisory, fetchAdvisories, updateFarmerCrops, updateFarmerCropStatus, addFragilityAdvisory, fetchFragilityAdvisories, fetchForecastAdvisories, addForecastAdvisory, ForecastAdvisoryData } from "@/lib/firestore";
 import { auth, db, storage } from "@/lib/firebase";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
@@ -331,7 +332,7 @@ export default function DashboardPage() {
   const [stageModalTarget, setStageModalTarget] = useState<string | null>(null);
 
   // For crop detail modal we pass a full crop object
-  const [detailCrop, setDetailCrop] = useState<{ id: string; name: string; image?: string; stage?: string } | null>(null);
+  const [detailCrop, setDetailCrop] = useState<{ id: string; name: string; image?: string; stage?: string; plantedAt?: string; growth?: CropGrowthInfo } | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
 
   const [vantaObj, setVantaObj] = useState<VantaInstance>(null);
@@ -388,9 +389,9 @@ export default function DashboardPage() {
     }
   }
 
-  // fetch fragility advisory when user opens fragility tab (use cache + background refresh)
+  // fetch fragility advisory on dashboard load so the overview can surface risk summary
   useEffect(() => {
-    if (activeTab !== 'fragility') return;
+    if (activeTab !== 'fragility' && activeTab !== 'overview') return;
     (async () => {
       if (!user) return;
       const key = `fragility:${user.uid}:${farm?.language ?? 'en'}:${farm?.lga ?? ''}`;
@@ -615,7 +616,7 @@ useEffect(() => {
                   const adRes = await fetch("/api/advice", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ crops: data.crops ?? [], weather: wJson, lang: lang ?? data.language ?? "en", cropStages, state: data.state ?? null, lga: data.lga ?? null, soilSummary: data.soilSummary ?? null, soil: data.soil ?? null }),
+                    body: JSON.stringify({ crops: data.crops ?? [], weather: wJson, lang: lang ?? data.language ?? "en", cropStages, cropGrowth: Object.fromEntries((data.crops ?? []).map((c) => [c, { plantedAt: data.cropStatus?.[c]?.plantedAt ?? null, daysPlanted: data.cropStatus?.[c]?.plantedAt ? Math.max(0, Math.floor((Date.now() - new Date(data.cropStatus[c].plantedAt as string).getTime()) / 86400000)) : null, phaseLabel: getCropGrowthInfo(c, data.cropStatus?.[c]).phaseLabel, harvestReady: getCropGrowthInfo(c, data.cropStatus?.[c]).harvestReady }])), state: data.state ?? null, lga: data.lga ?? null, soilSummary: data.soilSummary ?? null, soil: data.soil ?? null }),
                   });
                   const adJson = await adRes.json();
                   let storedAdvice = "";
@@ -731,7 +732,7 @@ useEffect(() => {
   const adRes = await fetch("/api/advice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ crops: farm.crops ?? [], weather: wJson, lang: lang ?? farm?.language ?? "en", cropStages, state: farm?.state ?? null, lga: farm?.lga ?? null, soilSummary: farm?.soilSummary ?? null, soil: farm?.soil ?? null }),
+  body: JSON.stringify({ crops: farm.crops ?? [], weather: wJson, lang: lang ?? farm?.language ?? "en", cropStages, cropGrowth: Object.fromEntries((farm.crops ?? []).map((c) => [c, { plantedAt: farm?.cropStatus?.[c]?.plantedAt ?? null, daysPlanted: getCropGrowthInfo(c, farm?.cropStatus?.[c]).daysPlanted, phaseLabel: getCropGrowthInfo(c, farm?.cropStatus?.[c]).phaseLabel, harvestReady: getCropGrowthInfo(c, farm?.cropStatus?.[c]).harvestReady }])), state: farm?.state ?? null, lga: farm?.lga ?? null, soilSummary: farm?.soilSummary ?? null, soil: farm?.soil ?? null }),
   });
       const adJson = await adRes.json();
       let storedAdvice = "";
@@ -1089,6 +1090,7 @@ useEffect(() => {
           weather: wJson,
           // prefer UI-selected language, fall back to farmer doc language then en
           lang: lang ?? farm.language ?? "en",
+          cropGrowth: Object.fromEntries((farm.crops ?? []).map((c) => [c, { plantedAt: farm?.cropStatus?.[c]?.plantedAt ?? null, daysPlanted: getCropGrowthInfo(c, farm?.cropStatus?.[c]).daysPlanted, phaseLabel: getCropGrowthInfo(c, farm?.cropStatus?.[c]).phaseLabel, harvestReady: getCropGrowthInfo(c, farm?.cropStatus?.[c]).harvestReady }])),
           stage: null,
           state: farm?.state ?? null,
           lga: farm?.lga ?? null,
@@ -1198,11 +1200,14 @@ useEffect(() => {
 
   // helper to open crop detail by building a crop object (name + unsplash image)
   function openCropDetail(cId: string) {
+    const growth = getCropGrowthInfo(cId, farm?.cropStatus?.[cId]);
     const cropObj = {
       id: cId,
       name: cId.charAt(0).toUpperCase() + cId.slice(1),
       image: CROP_OPTIONS.find((c) => c.id === cId)?.img || `https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=900&auto=format&fit=crop`,
       stage: farm?.cropStatus?.[cId]?.stage,
+      plantedAt: farm?.cropStatus?.[cId]?.plantedAt,
+      growth,
     };
     setDetailCrop(cropObj);
     setDetailModalOpen(true);
@@ -1243,7 +1248,6 @@ useEffect(() => {
 
       {/* header/logo centered */}
       <header className="py-8 flex flex-col items-center">
-        <Image src="/Pangolin-x.png" alt="Pangolin-x logo" width={220} height={60} className="mb-4" />
         <div className="w-full max-w-5xl mx-auto px-4">
           <div className="bg-white/90 rounded-2xl p-6 flex flex-col sm:flex-row items-center gap-6 shadow-xl">
             <div>
@@ -1317,53 +1321,8 @@ useEffect(() => {
             </div>
           )}
 
-          {/* tabs */}
-          <nav className="mt-4 flex items-center gap-2 overflow-x-auto no-scrollbar px-1 pb-2" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <button
-              onClick={() => setActiveTab("overview")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "overview" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("overview_tab")}
-            </button>
-            <button
-              onClick={() => setActiveTab("history")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("history_tab")}
-            </button>
-            <button
-              onClick={() => setActiveTab("crops")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "crops" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("crops_tab")}
-            </button>
-            <button
-              onClick={() => setActiveTab("settings")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "settings" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("settings_tab")}
-            </button>
-            <button
-              onClick={() => setActiveTab("fragility")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "fragility" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("fragility_tab")}
-            </button>
-            <button
-              onClick={() => setActiveTab("fragility_history")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "fragility_history" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("fragility_history_tab")}
-            </button>
-            <button
-              onClick={() => setActiveTab("forecast_advisory")}
-              className={`px-4 py-2 rounded-full min-w-[120px] text-sm transition-colors duration-150 flex-shrink-0 text-center whitespace-normal break-words leading-tight h-auto ${activeTab === "forecast_advisory" ? "bg-white text-green-800" : "bg-green-600 text-white"}`}
-            >
-              {t("forecast_advisory_tab") ?? "Forecast Advisory"}
-            </button>
-          </nav>
         </div>
-      </header>
+       </header>
 
       <main className="max-w-5xl mx-auto px-4 pb-16">
         {/* Overview */}
@@ -1388,27 +1347,27 @@ useEffect(() => {
               <div className="mt-6">
                 {loadingAdvice ? (
                   // lightweight skeleton UI for perceived performance
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-4 rounded-lg bg-white shadow-sm">
+                  <div className="grid grid-cols-1 gap-5">
+                    <div className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm">
                       <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-3">
-                        <div className="p-4 rounded-lg bg-gradient-to-br from-green-50 to-white border flex flex-col items-start gap-2">
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-white border border-emerald-100 flex flex-col items-start gap-2 shadow-sm">
                           <div className="h-4 bg-gray-200 rounded w-24 animate-pulse" />
                           <div className="h-7 bg-gray-200 rounded w-20 animate-pulse" />
                           <div className="h-3 bg-gray-200 rounded w-32 animate-pulse" />
                         </div>
-                        <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-50 to-white border flex flex-col items-start gap-2">
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-sky-50 to-white border border-sky-100 flex flex-col items-start gap-2 shadow-sm">
                           <div className="h-4 bg-gray-200 rounded w-20 animate-pulse" />
                           <div className="h-7 bg-gray-200 rounded w-20 animate-pulse" />
                           <div className="h-3 bg-gray-200 rounded w-24 animate-pulse" />
                         </div>
-                        <div className="p-4 rounded-lg bg-gradient-to-br from-blue-50 to-white border flex flex-col items-start gap-2 col-span-1 xs:col-span-2 md:col-span-1 mx-auto">
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-50 to-white border border-slate-200 flex flex-col items-start gap-2 shadow-sm col-span-1 xs:col-span-2 md:col-span-1 mx-auto">
                           <div className="h-4 bg-gray-200 rounded w-24 animate-pulse" />
                           <div className="h-6 bg-gray-200 rounded w-40 animate-pulse" />
                           <div className="h-3 bg-gray-200 rounded w-28 animate-pulse" />
                         </div>
                       </div>
                     </div>
-                    <div className="p-4 rounded-lg bg-white shadow-sm">
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                       <div className="space-y-3">
                         <div className="h-5 bg-gray-200 rounded w-40 animate-pulse" />
                         <div className="h-40 bg-gray-200 rounded w-full animate-pulse" />
@@ -1416,11 +1375,11 @@ useEffect(() => {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-5">
                     {/* Weather cards: 2 columns on mobile, 3 on md+ */}
-                    <div className="p-4 rounded-lg bg-white shadow-sm">
-                      <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-3">
-                        <div className="p-4 rounded-lg bg-gradient-to-br from-green-50 to-white border flex flex-col items-start gap-2">
+                    <div className="overflow-hidden rounded-3xl border border-emerald-100 bg-white px-4 py-4 shadow-sm">
+                      <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-white border border-emerald-100 flex flex-col items-start gap-2 shadow-sm">
                           <div className="flex items-center gap-2 w-full">
                             <Thermometer className="w-6 h-6 text-green-700" />
                             <div className="text-xs text-gray-500">{t("temperature")}</div>
@@ -1431,7 +1390,7 @@ useEffect(() => {
                           <div className="text-xs text-gray-500 w-full">{t("feels_like")}: {weather?.current?.feels_like ?? weather?.main?.feels_like ?? "N/A"}°C</div>
                           <div className="text-xs text-gray-400 mt-2">{weatherUpdatedAt ? `${Math.max(0, Math.floor((Date.now() - weatherUpdatedAt)/60000))}m ago` : ''} {weatherFromCache ? '(cached)' : ''}</div>
                         </div>
-                        <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-50 to-white border flex flex-col items-start gap-2">
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-sky-50 to-white border border-sky-100 flex flex-col items-start gap-2 shadow-sm">
                           <div className="flex items-center gap-2 w-full">
                             <Droplet className="w-6 h-6 text-blue-600" />
                             <div className="text-xs text-gray-500">{t("humidity")}</div>
@@ -1439,7 +1398,7 @@ useEffect(() => {
                           <div className="text-2xl font-semibold w-full">{weather?.current?.humidity ?? weather?.main?.humidity ?? "N/A"}%</div>
                           <div className="text-xs text-gray-500 w-full">{t("pressure")}: {weather?.current?.pressure ?? weather?.main?.pressure ?? "-"}</div>
                         </div>
-                        <div className="p-4 rounded-lg bg-gradient-to-br from-blue-50 to-white border flex flex-col items-start gap-2 col-span-1 xs:col-span-2 md:col-span-1 mx-auto">
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-50 to-white border border-slate-200 flex flex-col items-start gap-2 shadow-sm">
                           <div className="flex items-center gap-2 w-full">
                             <Cloud className="w-6 h-6 text-gray-700" />
                             <div className="text-xs text-gray-500">{t("conditions")}</div>
@@ -1448,10 +1407,10 @@ useEffect(() => {
                           <div className="text-xs text-gray-500 w-full">{t("wind_speed")}: {weather?.current?.wind_speed ?? weather?.wind?.speed ?? "-"}</div>
                         </div>
                         {/* Forecast dropdown & preview */}
-                        <div className="mt-4">
-                          <label className="text-xs text-gray-500">{t('forecast_label') ?? 'Forecast'}</label>
-                          <div className="flex items-center gap-2 mt-2">
-                            <select value={String(forecastDays)} onChange={(e) => setForecastDays(Number(e.target.value))} className="px-3 py-2 rounded-lg border bg-white text-sm">
+                          <div className="col-span-full mt-4 w-full">
+                            <label className="text-xs text-gray-500">{t('forecast_label') ?? 'Forecast'}</label>
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              <select value={String(forecastDays)} onChange={(e) => setForecastDays(Number(e.target.value))} className="px-3 py-2 rounded-full border border-slate-200 bg-white text-sm">
                               <option value={3}>3 days</option>
                               <option value={5}>5 days</option>
                               <option value={7}>7 days</option>
@@ -1483,10 +1442,10 @@ useEffect(() => {
                               } finally {
                                 setForecastLoading(false);
                               }
-                            }} className="px-3 py-2 rounded bg-green-600 text-white text-sm">{t('get_forecast') ?? 'Get forecast'}</button>
+                            }} className="px-4 py-2 rounded-full bg-emerald-600 text-white text-sm shadow-sm">{t('get_forecast') ?? 'Get forecast'}</button>
                           </div>
 
-                          <div className="mt-3">
+                          <div className="col-span-full mt-3 w-full">
                             {forecastLoading ? <div className="text-sm text-gray-500">Loading forecast...</div> : null}
                             {forecastError ? <div className="text-sm text-red-600">{forecastError}</div> : null}
                             {forecast && forecast.length > 0 && (
@@ -1496,7 +1455,7 @@ useEffect(() => {
                                   const previewCount = Math.min(3, forecast.length);
                                   const previewDays = forecast.slice(0, previewCount);
                                   return (
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                       {previewDays.map((d, idx) => {
                                         const dt = d.dt ? new Date(d.dt * 1000).toLocaleDateString() : `Day ${idx + 1}`;
                                         const min = d.temp?.min ?? d.temp?.night ?? '-';
@@ -1504,7 +1463,7 @@ useEffect(() => {
                                         const desc = d.weather?.[0]?.description ?? '-';
                                         const hum = d.humidity ?? '-';
                                         return (
-                                          <div key={idx} className="p-3 rounded-lg bg-white border flex flex-col items-start gap-2">
+                                          <div key={idx} className="p-4 rounded-2xl bg-white border border-slate-200 flex flex-col items-start gap-2 shadow-sm">
                                             <div className="flex items-center gap-2 w-full">
                                               <div className="text-xs text-gray-500">{dt}</div>
                                             </div>
@@ -1526,7 +1485,7 @@ useEffect(() => {
                                     const max = d.temp?.max ?? d.temp?.day ?? '-';
                                     const desc = d.weather?.[0]?.description ?? '-';
                                     return (
-                                      <div key={i} className="p-2 border rounded flex items-center justify-between">
+                                      <div key={i} className="p-3 border border-slate-200 rounded-2xl flex items-center justify-between bg-white">
                                         <div>
                                           <div className="text-sm font-semibold text-green-800">{dt}</div>
                                           <div className="text-xs text-gray-600 capitalize">{desc}</div>
@@ -1578,6 +1537,9 @@ useEffect(() => {
                                     <div className="flex-1 flex flex-col">
                                       <div className="font-semibold text-green-800">{cId.charAt(0).toUpperCase() + cId.slice(1)}</div>
                                       <div className="text-xs text-gray-500">{t("stage_label")}: {farm?.cropStatus?.[cId]?.stage ?? t("unknown_stage")}</div>
+                                      <div className="text-xs text-gray-500">
+                                        Planted for {getCropGrowthInfo(cId, farm?.cropStatus?.[cId]).daysPlanted ?? "—"} days · {getCropGrowthInfo(cId, farm?.cropStatus?.[cId]).phaseLabel}
+                                      </div>
                                     </div>
                                     <div>
                                       <button
@@ -1603,6 +1565,38 @@ useEffect(() => {
                               </div>
                             )
                           )
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm uppercase tracking-[0.2em] text-emerald-700">{t("fragility_tab")}</div>
+                          <h4 className="mt-1 text-lg font-semibold text-slate-900">{t("fragility_tab") ?? "Fragility & Risk Advisory"}</h4>
+                        </div>
+                        {fragilityUpdatedAt ? <div className="text-xs text-slate-500">{formatHHMM(fragilityUpdatedAt)} {fragilityFromCache ? "(cached)" : ""}</div> : null}
+                      </div>
+                      <div className="mt-4">
+                        {fragility ? (
+                          <div className="space-y-3">
+                            <p className="text-sm text-slate-600">{fragility.header}</p>
+                            <div className="grid gap-3 md:grid-cols-3">
+                              {(fragility.sections || []).slice(0, 3).map((s: FragilitySection, i: number) => (
+                                <div key={i} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="font-medium text-slate-900">{s.title}</div>
+                                    <div className="text-xs uppercase tracking-wide text-emerald-700">{s.severity}</div>
+                                  </div>
+                                  <div className="mt-2 text-sm text-slate-600">{s.summary}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                            {t("no_fragility_advisory") ?? "No fragility advisory available yet."}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1929,6 +1923,12 @@ useEffect(() => {
                     <div className="relative p-4">
                       <div className="text-lg font-semibold text-green-900">{c.charAt(0).toUpperCase() + c.slice(1)}</div>
                       <div className="text-sm text-gray-700 mt-1">{t("stage_label")}: {farm?.cropStatus?.[c]?.stage ?? t("unknown_stage")}</div>
+                      <div className="text-sm text-gray-600 mt-1">
+                        Planted for {getCropGrowthInfo(c, farm?.cropStatus?.[c]).daysPlanted ?? "—"} days · {getCropGrowthInfo(c, farm?.cropStatus?.[c]).phaseLabel}
+                      </div>
+                      {getCropGrowthInfo(c, farm?.cropStatus?.[c]).harvestReady && (
+                        <div className="mt-2 inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">Harvest alert</div>
+                      )}
                       <div className="mt-3 flex gap-2">
                         <button onClick={() => openCropDetail(c)} className="px-3 py-2 bg-white rounded border">{t("view")}</button>
                         <button onClick={() => handleSaveCrops((farm?.crops ?? []).filter(x => x !== c))} className="px-3 py-2 bg-red-50 text-red-600 rounded border">{t("remove")}</button>
@@ -2077,19 +2077,20 @@ useEffect(() => {
                       fetch("/api/advice", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          crops: farm?.crops ?? [],
-                          weather: selectedForecastDay,
-                          lang: lang ?? farm?.language ?? "en",
-                          cropStages: (() => {
-                            const stages: Record<string, { stage?: string }> = {};
-                            (farm?.crops ?? []).forEach((c) => {
-                              stages[c] = { stage: farm?.cropStatus?.[c]?.stage ?? "unknown" };
-                            });
-                            return stages;
-                          })(),
-                          forecastDate: (selectedForecastDay && typeof selectedForecastDay.dt === "number") ? new Date(selectedForecastDay.dt * 1000).toISOString() : undefined,
-                          state: farm?.state ?? null,
+        body: JSON.stringify({
+          crops: farm?.crops ?? [],
+          weather: selectedForecastDay,
+          lang: lang ?? farm?.language ?? "en",
+          cropStages: (() => {
+            const stages: Record<string, { stage?: string }> = {};
+            (farm?.crops ?? []).forEach((c) => {
+              stages[c] = { stage: farm?.cropStatus?.[c]?.stage ?? "unknown" };
+            });
+            return stages;
+          })(),
+          cropGrowth: Object.fromEntries((farm?.crops ?? []).map((c) => [c, { plantedAt: farm?.cropStatus?.[c]?.plantedAt ?? null, daysPlanted: getCropGrowthInfo(c, farm?.cropStatus?.[c]).daysPlanted, phaseLabel: getCropGrowthInfo(c, farm?.cropStatus?.[c]).phaseLabel, harvestReady: getCropGrowthInfo(c, farm?.cropStatus?.[c]).harvestReady }])),
+          forecastDate: (selectedForecastDay && typeof selectedForecastDay.dt === "number") ? new Date(selectedForecastDay.dt * 1000).toISOString() : undefined,
+          state: farm?.state ?? null,
                           lga: farm?.lga ?? null,
                           soilSummary: farm?.soilSummary ?? null,
                           soil: farm?.soil ?? null,

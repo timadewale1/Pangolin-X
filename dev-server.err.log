@@ -1,0 +1,65 @@
+soil save error Error: 3 INVALID_ARGUMENT: Property soil contains an invalid nested entity.
+    at POST (app\api\soilgrids\save\route.ts:25:15)
+  23 |     // Use merge set so the write succeeds even if the farmer document is missing.
+  24 |     // Also normalize the payload to plain JSON so Firestore does not see non-serializable nested entities.
+> 25 |     await ref.set({ soil: safeSoil, soilSummary: safeSummary }, { merge: true });
+     |               ^
+  26 |
+  27 |     return NextResponse.json({ ok: true });
+  28 |   } catch (err) { {
+  code: 3,
+  details: 'Property soil contains an invalid nested entity.',
+  metadata: [Metadata],
+  note: 'Exception occurred in retry method that was not classified as transient'
+}
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1579621970563-ebec7560ff5d?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1508061253142-4f6f2c2b3f4a?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1547517029-22f3b44f4e57?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1508061253142-4f6f2c2b3f4a?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1579621970563-ebec7560ff5d?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1547517029-22f3b44f4e57?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1592928305769-1bfa56337f1e?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1518976024611-6d04b6d1b9a5?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1542444459-db9e5b3b7d1f?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1562004760-ace8f9d1605b?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1502741126161-b048400d7b9a?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1524594154902-0b1f7b4f8d8e?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1516910817561-3d1f8d8f7b73?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1516685018646-549eb5c4b8a3?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1597750094408-4b2a2b4a2c5f?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1509228627152-45f1e2d8b8c9?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1550258989-9a6f3f95a1b4?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1504198453319-5ce911bafcde?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1561043433-aaf687c4cf4f?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1505575976101-1d8b0f3e5f5d?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1508061253142-4f6f2c2b3f4a?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1579621970563-ebec7560ff5d?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1544378736-6b2bb5f70f6a?q=80&w=900&auto=format&fit=crop 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1547517029-22f3b44f4e57?q=80&w=900&auto=format&fit=crop 404
+soil save error Error: 3 INVALID_ARGUMENT: Property soil contains an invalid nested entity.
+    at POST (app\api\soilgrids\save\route.ts:25:15)
+  23 |     // Use merge set so the write succeeds even if the farmer document is missing.
+  24 |     // Also normalize the payload to plain JSON so Firestore does not see non-serializable nested entities.
+> 25 |     await ref.set({ soil: safeSoil, soilSummary: safeSummary }, { merge: true });
+     |               ^
+  26 |
+  27 |     return NextResponse.json({ ok: true });
+  28 |   } catch (err) { {
+  code: 3,
+  details: 'Property soil contains an invalid nested entity.',
+  metadata: [Metadata],
+  note: 'Exception occurred in retry method that was not classified as transient'
+}
+Fragility advisory error: SyntaxError: Unexpected end of JSON input
+    at JSON.parse (<anonymous>)
+    at POST (app\api\fragility\route.ts:8:28)
+   6 | export async function POST(req: Request) {
+   7 |   try {
+>  8 |     const body = await req.json();
+     |                            ^
+   9 |     const lang = body.lang;
+  10 |     const lga = body.lga ?? "unknown";
+  11 |     if (!body) return NextResponse.json({ error: "Missing data" }, { status: 400 });

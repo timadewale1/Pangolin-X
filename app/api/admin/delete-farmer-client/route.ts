@@ -1,36 +1,27 @@
 import { NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 
-if (!admin.apps.length) {
-  try {
-    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
-    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
-    const serviceAccount = JSON.parse(keyRaw);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
-    });
-  } catch (err) {
-    console.error('Failed to init firebase-admin (delete-farmer-client):', err);
+function initFirebase() {
+  if (!admin.apps.length) {
+    try {
+      const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
+      if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
+      const serviceAccount = JSON.parse(keyRaw);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
+      });
+    } catch (err) {
+      console.error('Failed to init firebase-admin (delete-farmer-client):', err);
+      throw err;
+    }
   }
 }
-
-if (!admin.apps.length) {
-  try {
-    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
-    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
-    const serviceAccount = JSON.parse(keyRaw);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as unknown as admin.ServiceAccount),
-    });
-  } catch (err) {
-    console.error('Failed to init firebase-admin (delete-farmer-client):', err);
-  }
-}
-
-const db = admin.firestore();
 
 export async function POST(req: Request) {
   try {
+    initFirebase();
+    const db = admin.firestore();
+    
     const authHeader = req.headers.get('authorization') || '';
     if (!authHeader.startsWith('Bearer ')) return NextResponse.json({ success: false, message: 'Missing token' }, { status: 401 });
     const idToken = authHeader.split(' ')[1];

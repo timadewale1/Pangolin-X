@@ -1,5 +1,5 @@
-// app/page.tsx
 "use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import { useLanguage } from "@/context/LanguageContext";
@@ -7,7 +7,7 @@ import LanguageButton from "@/components/LanguageButton";
 import { FaCloudSun, FaLeaf, FaGlobe, FaMobileAlt } from "react-icons/fa";
 
 export default function Home() {
-  const { t, lang, setLang } = useLanguage();
+  const { t } = useLanguage();
 
   const heroImg = "https://images.unsplash.com/photo-1620200423727-8127f75d7f53?q=80&w=600&auto=format&fit=crop";
   const howImg = "https://images.unsplash.com/photo-1744230673231-865d54a0aba4?q=80&w=600&auto=format&fit=crop";
@@ -19,32 +19,12 @@ export default function Home() {
         <div className="container mx-auto px-6 py-3 flex justify-between items-center">
           <div className="flex items-center space-x-4">
             <Image src="/Pangolin-x.png" alt="Pangolin-x logo" width={48} height={48} priority />
-            {/* <span className="text-2xl font-bold text-green-700">Pangolin-x</span> */}
           </div>
 
           <div className="hidden md:flex items-center space-x-4">
             <a href="#features" className="text-gray-700 hover:text-green-600">{t("features")}</a>
             <a href="#how-it-works" className="text-gray-700 hover:text-green-600">{t("howItWorks")}</a>
             <a href="#contact" className="text-gray-700 hover:text-green-600">Contact</a>
-
-            {/* language select small (keeps in sync) */}
-            {/* <select
-              value={lang}
-              onChange={(e) =>
-                setLang(
-                  e.target.value as "en" | "ha" | "ig" | "yo" | "pg"
-                )
-              }
-              className="ml-4 rounded-full border px-3 py-1"
-            >
-              <option value="en">English</option>
-              <option value="ha">Hausa</option>
-              <option value="ig">Igbo</option>
-              <option value="yo">Yoruba</option>
-              <option value="pg">Pidgin</option>
-            </select> */}
-
-            {/* single language button - only one in the UI */}
             <LanguageButton />
           </div>
 
@@ -53,10 +33,8 @@ export default function Home() {
               <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-full text-sm font-medium">{t("getStarted")}</button>
             </Link>
             <Link href="/login">
-              <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-full text-sm font-medium">Login </button>
+              <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-full text-sm font-medium">Login</button>
             </Link>
-
-            {/* on mobile show button */}
             <div className="md:hidden">
               <LanguageButton />
             </div>
@@ -64,9 +42,8 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Hero */}
       <header className="relative" style={{ backgroundImage: `url(${heroImg})`, backgroundSize: "cover", backgroundPosition: "center" }}>
-        <div className="absolute inset-0 bg-[#255b2f88]"></div> {/* green overlay */}
+        <div className="absolute inset-0 bg-[#255b2f88]"></div>
         <div className="container mx-auto px-6 py-24 md:py-36 relative z-10 text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-4 text-white">{t("title")}</h1>
           <p className="text-lg md:text-xl mb-8 text-white">{t("subtitle")}</p>
@@ -78,7 +55,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* How it works (translations used) */}
       <main className="bg-white">
         <section className="py-16" id="how-it-works">
           <div className="container mx-auto px-6">
@@ -89,7 +65,7 @@ export default function Home() {
                 <Image src={howImg} alt="How Pangolin-x works" fill className="object-cover rounded-xl" />
               </div>
             </div>
-        
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="text-center px-6">
                 <div className="bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -118,9 +94,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Features */}
         <section id="features" className="py-16 bg-gray-50">
-          
           <div className="container mx-auto px-6">
             <div className="text-center mb-10">
               <h2 className="text-3xl font-bold text-gray-800 mb-4">{t("features")}</h2>
@@ -128,29 +102,28 @@ export default function Home() {
               <div className="relative w-full h-64 md:h-96">
                 <Image src={featuresImg} alt="" fill className="object-cover rounded-xl" />
               </div>
-
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               <div className="bg-white p-8 rounded-xl shadow-md feature-card">
-                <FaCloudSun className="text-green-600 mb-4" size={28}/>
+                <FaCloudSun className="text-green-600 mb-4" size={28} />
                 <h3 className="text-xl font-semibold mb-3">{t("features_local_weather")}</h3>
                 <p className="text-gray-600">{t("features_local_weather_desc")}</p>
               </div>
 
               <div className="bg-white p-8 rounded-xl shadow-md feature-card">
-                <FaLeaf className="text-green-600 mb-4" size={28}/>
+                <FaLeaf className="text-green-600 mb-4" size={28} />
                 <h3 className="text-xl font-semibold mb-3">{t("features_ai_advisor")}</h3>
                 <p className="text-gray-600">{t("features_ai_advisor_desc")}</p>
               </div>
 
               <div className="bg-white p-8 rounded-xl shadow-md feature-card">
-                <FaGlobe className="text-green-600 mb-4" size={28}/>
+                <FaGlobe className="text-green-600 mb-4" size={28} />
                 <h3 className="text-xl font-semibold mb-3">{t("features_multi_language")}</h3>
                 <p className="text-gray-600">{t("features_multi_language_desc")}</p>
               </div>
 
               <div className="bg-white p-8 rounded-xl shadow-md feature-card">
-                <FaMobileAlt className="text-green-600 mb-4" size={28}/>
+                <FaMobileAlt className="text-green-600 mb-4" size={28} />
                 <h3 className="text-xl font-semibold mb-3">{t("features_mobile")}</h3>
                 <p className="text-gray-600">{t("features_mobile_desc")}</p>
               </div>
@@ -158,7 +131,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* CTA */}
         <section id="cta" className="py-16 gradient-bg text-white">
           <div className="container mx-auto px-6 text-center">
             <h2 className="text-3xl font-bold mb-6">{t("ctaTitle")}</h2>
@@ -171,7 +143,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Pricing */}
         <section id="pricing" className="py-16 bg-white">
           <div className="container mx-auto px-6">
             <div className="text-center mb-10">
@@ -210,13 +181,6 @@ export default function Home() {
             </div>
           </div>
         </section>
-
-        {/* <section id="contact" className="py-12 bg-white">
-          <div className="container mx-auto px-6">
-            <h3 className="font-semibold mb-2">Contact</h3>
-            <p className="text-sm text-gray-600">hello@pangolinx.ng · +234 800 000 0000 · Lagos, Nigeria</p>
-          </div>
-        </section> */}
       </main>
 
       <footer className="bg-gray-800 text-white py-12">

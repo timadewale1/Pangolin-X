@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     }
 
     const base = 'https://rest.isric.org/soilgrids/v2.0';
-    const out: { classification: unknown | null; properties: Record<string, unknown> | null } = { classification: null, properties: null };
+    const out: { classification: Record<string, unknown> | null; properties: Record<string, unknown> | null } = { classification: null, properties: null };
 
     // Try SoilGrids with up to one retry. Collect errors for logging.
     let sgError: unknown = null;
@@ -61,66 +61,77 @@ export async function POST(req: Request) {
       }
     }
 
-    // If SoilGrids failed, optionally try OpenLandMap fallback if configured
     let usedFallback = false;
-    if (!out.classification && !out.properties) {
-      try {
-        const olm = await fetchOpenLandMap(lat, lon);
-        if (olm) {
-          // map known keys into properties/classification if possible
-          out.properties = out.properties ?? {};
-          (out.properties as Record<string, unknown>).openland = olm;
-          usedFallback = true;
-        }
-      } catch (e) {
-        console.warn('OpenLandMap helper fallback failed', e);
+
+    const firstNumericValue = (values: Record<string, unknown> | undefined) => {
+      if (!values) return undefined;
+      for (const key of ["mean", "Q0.5", "Q0_5", "median"]) {
+        const raw = values[key];
+        const num = typeof raw === "number" ? raw : Number(raw);
+        if (Number.isFinite(num)) return num;
       }
-    }
+      return undefined;
+    };
+
+    const firstDepthMean = (layer: Record<string, unknown> | undefined) => {
+      if (!layer) return undefined;
+      const depths = Array.isArray(layer.depths) ? layer.depths as Array<Record<string, unknown>> : [];
+      for (const depth of depths) {
+        const values = depth.values as Record<string, unknown> | undefined;
+        const numeric = firstNumericValue(values);
+        if (numeric !== undefined) return numeric;
+      }
+      return undefined;
+    };
 
     // best-effort summary: classification name or properties-derived ph/texture
     const parts: string[] = [];
-    // classification shape is dynamic; coerce safely
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const _cls: any = out.classification ?? {};
-    if (_cls && Array.isArray(_cls.classes) && _cls.classes.length > 0) {
-      const c = _cls.classes[0];
-      if (c && c.name) parts.push(c.name);
-    } else if (_cls && typeof _cls === 'string') {
-      parts.push(_cls as string);
+    const clsName = out.classification?.wrb_class_name ?? out.classification?.soil_class_name ?? out.classification?.name;
+    if (typeof clsName === 'string' && clsName.trim()) parts.push(clsName.trim());
+    else {
+      const clsList = out.classification?.wrb_class_probability;
+      if (Array.isArray(clsList) && Array.isArray(clsList[0]) && clsList[0][0]) {
+        parts.push(String(clsList[0][0]));
+      }
     }
+
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const P = (out.properties as any)?.properties ?? (out.properties as any) ?? null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const firstMean = (obj: any) => {
-        if (!obj) return undefined;
-        if (Array.isArray(obj.values) && obj.values.length > 0 && obj.values[0].mean !== undefined) return obj.values[0].mean;
-        if (Array.isArray(obj.depths) && obj.depths.length > 0) {
-          const d = obj.depths[0];
-          if (d && d.values && Array.isArray(d.values) && d.values[0] && d.values[0].mean !== undefined) return d.values[0].mean;
-          if (d && d.value && typeof d.value === 'number') return d.value;
-        }
-        if (typeof obj.mean === 'number') return obj.mean;
-        if (typeof obj === 'number') return obj;
-        return undefined;
-      };
-      if (P) {
-        const ph = firstMean(P.phh2o ?? P.phh2o?.[0] ?? P.ph ?? null);
-        const sand = firstMean(P.sand ?? null);
-        const silt = firstMean(P.silt ?? null);
-        const clay = firstMean(P.clay ?? null);
-        if (ph !== undefined && ph !== null) parts.push(`pH≈${Math.round(ph * 10) / 10}`);
-        const tex: string[] = [];
-        if (sand !== undefined && sand !== null) tex.push(`sand ${Math.round(sand)}%`);
-        if (silt !== undefined && silt !== null) tex.push(`silt ${Math.round(silt)}%`);
-        if (clay !== undefined && clay !== null) tex.push(`clay ${Math.round(clay)}%`);
+      const layers = Array.isArray(out.properties?.layers) ? out.properties!.layers as Array<Record<string, unknown>> : [];
+      const getLayer = (name: string) => layers.find((layer) => String(layer.name ?? "").toLowerCase() === name);
+      const ph = firstDepthMean(getLayer("phh2o"));
+      const sand = firstDepthMean(getLayer("sand"));
+      const silt = firstDepthMean(getLayer("silt"));
+      const clay = firstDepthMean(getLayer("clay"));
+      if (ph !== undefined && ph !== null) parts.push(`pH~${Math.round(ph * 10) / 10}`);
+      const tex: string[] = [];
+      if (sand !== undefined && sand !== null) tex.push(`sand ${Math.round(sand)}%`);
+      if (silt !== undefined && silt !== null) tex.push(`silt ${Math.round(silt)}%`);
+      if (clay !== undefined && clay !== null) tex.push(`clay ${Math.round(clay)}%`);
         if (tex.length) parts.push(tex.join(', '));
+
+      if (ph === undefined || sand === undefined || silt === undefined || clay === undefined) {
+        try {
+          const olm = await fetchOpenLandMap(lat, lon);
+          if (olm) {
+            out.properties = out.properties ?? {};
+            (out.properties as Record<string, unknown>).openland = olm;
+            usedFallback = true;
+            const olmParts: string[] = [];
+            if (ph === undefined && typeof olm.ph === "number") olmParts.push(`pH~${Math.round(olm.ph * 10) / 10}`);
+            if (sand === undefined && typeof olm.sand === "number") olmParts.push(`sand ${Math.round(olm.sand)}%`);
+            if (silt === undefined && typeof olm.silt === "number") olmParts.push(`silt ${Math.round(olm.silt)}%`);
+            if (clay === undefined && typeof olm.clay === "number") olmParts.push(`clay ${Math.round(olm.clay)}%`);
+            if (olmParts.length) parts.push(olmParts.join(', '));
+          }
+        } catch (e) {
+          console.warn('OpenLandMap helper fallback failed', e);
+        }
       }
     } catch (err) {
       console.warn('summary extraction error', err);
     }
 
-    const summary = parts.length ? parts.join(' · ') : null;
+    const summary = parts.length ? parts.join(' | ') : null;
 
     // If we have no meaningful data from either provider, return cached data if present,
     // otherwise return an error so client can show message. Also include diagnostics.

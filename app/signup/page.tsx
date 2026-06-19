@@ -10,6 +10,8 @@ import { setDoc, doc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { NIGERIA_STATES_LGAS } from "@/lib/nigeriaData";
 import { CROP_OPTIONS } from "@/lib/crops";
+import { storage } from "@/lib/firebase";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import Loader from "@/components/Loader";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -28,7 +30,10 @@ type FormData = {
   phone: string;
   state: string;
   lga: string;
+  lat?: number | null;
+  lon?: number | null;
   crops: string[]; // array of crop ids
+  farmPhotos?: string[];
   language?: string;
   title?: string;
   acceptedTerms: boolean;
@@ -76,7 +81,10 @@ export default function SignupPage() {
     phone: "",
     state: "",
     lga: "",
+    lat: null,
+    lon: null,
     crops: [],
+    farmPhotos: [],
     language: "en",
     title: "",
     acceptedTerms: false,
@@ -93,6 +101,8 @@ export default function SignupPage() {
   const [cropSearch, setCropSearch] = useState("");
   const [stateSearch, setStateSearch] = useState("");
   const [lgaSearch, setLgaSearch] = useState("");
+  const [farmPhotos, setFarmPhotos] = useState<string[]>([]);
+  const [uploadingSlot, setUploadingSlot] = useState<number | null>(null);
   // removed unused detected state
 
   // Titles and languages used in the app
@@ -192,7 +202,7 @@ export default function SignupPage() {
             const lga = j.locality ?? j.city ?? j.municipality ?? "";
             // Fuzzy match
             const matchedLga = lgas.find((x) => x.toLowerCase() === lga.toLowerCase()) || lgas.find((x) => lga && x.toLowerCase().includes(lga.toLowerCase()));
-            setFormState((p) => ({ ...p, state: princ, lga: matchedLga || "" }));
+            setFormState((p) => ({ ...p, state: princ, lga: matchedLga || "", lat, lon }));
             // removed setDetected (no longer used)
             return;
           }
@@ -212,7 +222,7 @@ export default function SignupPage() {
           if (state && NIGERIA_STATES_LGAS[state]) {
             const lgas = NIGERIA_STATES_LGAS[state];
             const matchedLga = lgas.find((x) => x.toLowerCase() === lga.toLowerCase()) || lgas.find((x) => lga && x.toLowerCase().includes(lga.toLowerCase()));
-            setFormState((p) => ({ ...p, state, lga: matchedLga || "" }));
+            setFormState((p) => ({ ...p, state, lga: matchedLga || "", lat, lon }));
             // removed setDetected (no longer used)
           }
         } catch (e) {
@@ -231,6 +241,21 @@ export default function SignupPage() {
       const crops = p.crops.includes(id) ? p.crops.filter((c) => c !== id) : [...p.crops, id];
       return { ...p, crops };
     });
+  }
+
+  async function uploadFarmPhoto(slot: number, file: File) {
+    const path = `farmPhotos/${formState.email || 'signup'}/${Date.now()}-${slot}-${file.name}`;
+    setUploadingSlot(slot);
+    const ref = storageRef(storage, path);
+    await uploadBytes(ref, file);
+    const url = await getDownloadURL(ref);
+    setFarmPhotos((current) => {
+      const next = [...current];
+      next[slot] = url;
+      return next.slice(0, 4);
+    });
+    toast.success(`Farm photo ${slot + 1} uploaded`);
+    setUploadingSlot(null);
   }
 
   async function onSubmit() {
@@ -419,7 +444,10 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                           phone: formState.phone,
                           state: formState.state,
                           lga: formState.lga,
+                          lat: formState.lat ?? null,
+                          lon: formState.lon ?? null,
                           crops: formState.crops,
+                          farmPhotos,
                           language: (formState && formState.language) ? formState.language : 'en',
                           title: (formState && formState.title) ? formState.title : '',
                           createdAt: paidAt.toISOString(),
@@ -480,7 +508,10 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
         phone: formState.phone,
         state: formState.state,
         lga: formState.lga,
+        lat: formState.lat ?? null,
+        lon: formState.lon ?? null,
         crops: formState.crops,
+        farmPhotos,
         language: (formState && formState.language) ? formState.language : "en",
         title: (formState && formState.title) ? formState.title : "",
         createdAt: paidAt.toISOString(),
@@ -667,6 +698,41 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
               </div>
             </div>
 
+            <div className="mt-4">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Farm photos</label>
+                <span className="text-xs text-gray-500">Upload up to 4 angles</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                {Array.from({ length: 4 }).map((_, slot) => (
+                  <label key={slot} className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-gray-300 bg-gray-50 text-center">
+                    {farmPhotos[slot] ? (
+                      <Image src={farmPhotos[slot]} alt={`Farm photo ${slot + 1}`} fill className="object-cover" />
+                    ) : (
+                      <div className="px-3 py-4 text-sm text-gray-500">
+                        {uploadingSlot === slot ? "Uploading..." : `Photo ${slot + 1}`}
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          await uploadFarmPhoto(slot, file);
+                        } catch (err) {
+                          console.error(err);
+                          toast.error("Failed to upload farm photo");
+                        }
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* STATES */}
             <div className="mt-4">
               <label className="text-sm font-medium">Select State</label>
@@ -750,6 +816,12 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {(formState.lat || formState.lon) && (
+              <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">
+                Exact location detected: {formState.lat?.toFixed(5)}, {formState.lon?.toFixed(5)}
               </div>
             )}
 

@@ -9,6 +9,7 @@ import {
   query,
   orderBy,
   limit,
+  startAfter,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -89,6 +90,15 @@ export async function fetchAdvisories(uid: string, count: number = 10) {
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
+export async function fetchAdvisoriesPage(uid: string, count: number = 10, after?: unknown) {
+  const ref = collection(db, "farmers", uid, "advisories");
+  const constraints = after ? [orderBy("createdAt", "desc"), startAfter(after), limit(count)] : [orderBy("createdAt", "desc"), limit(count)];
+  const snap = await getDocs(query(ref, ...constraints));
+  const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  const lastCursor = snap.docs.length ? snap.docs[snap.docs.length - 1].get("createdAt") : null;
+  return { items, lastCursor, hasMore: snap.docs.length === count };
+}
+
 // Fetch forecast advisories for a specific date range
 export async function fetchForecastAdvisories(uid: string, fromDate: Date, toDate: Date, count: number = 10) {
   const ref = collection(db, "farmers", uid, "forecastAdvisories");
@@ -117,6 +127,15 @@ export async function fetchFragilityAdvisories(uid: string, count: number = 10) 
   const q = query(ref, orderBy("createdAt", "desc"), limit(count));
   const snap = await getDocs(q);
   return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as FragilityAdvisoryData) }));
+}
+
+export async function fetchFragilityAdvisoriesPage(uid: string, count: number = 10, after?: unknown) {
+  const ref = collection(db, "farmers", uid, "fragility");
+  const constraints = after ? [orderBy("createdAt", "desc"), startAfter(after), limit(count)] : [orderBy("createdAt", "desc"), limit(count)];
+  const snap = await getDocs(query(ref, ...constraints));
+  const items = snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as FragilityAdvisoryData) }));
+  const lastCursor = snap.docs.length ? snap.docs[snap.docs.length - 1].get("createdAt") : null;
+  return { items, lastCursor, hasMore: snap.docs.length === count };
 }
 
 // Update crop list for a farmer

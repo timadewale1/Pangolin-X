@@ -17,8 +17,12 @@ export async function POST(req: Request) {
     }
 
     const ref = adminDB.doc(`farmers/${uid}`);
-    // Use update to avoid overwriting the farmer doc if it exists
-    await ref.update({ soil: soil, soilSummary: soilSummary });
+    const safeSoil = soil == null ? null : JSON.parse(JSON.stringify(soil));
+    const safeSummary = typeof soilSummary === 'string' ? soilSummary : soilSummary == null ? null : String(soilSummary);
+
+    // Use merge set so the write succeeds even if the farmer document is missing.
+    // Also normalize the payload to plain JSON so Firestore does not see non-serializable nested entities.
+    await ref.set({ soil: safeSoil, soilSummary: safeSummary }, { merge: true });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

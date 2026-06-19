@@ -1,33 +1,39 @@
 import { NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 
-if (!admin.apps.length) {
-  try {
-    const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
-    if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
-    const serviceAccount = JSON.parse(keyRaw);
+const VALID_CODE = 'PANGOLIN-X';
 
-    // 👇 Convert escaped newlines back to real ones
-    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+function initFirebase() {
+  if (!admin.apps.length) {
+    try {
+      const keyRaw = process.env.SERVICE_ACCOUNT_KEY;
+      if (!keyRaw) throw new Error('Missing SERVICE_ACCOUNT_KEY env variable');
+      const serviceAccount = JSON.parse(keyRaw);
 
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-  } catch (err) {
-    console.error('Failed to init firebase-admin (consume-client):', err);
+      // 👇 Convert escaped newlines back to real ones
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+    } catch (err) {
+      console.error('Failed to init firebase-admin (consume-client):', err);
+      throw err;
+    }
   }
 }
-const db = admin.firestore();
-const VALID_CODE = 'PANGOLIN-X';
 
 export async function POST(req: Request) {
   try {
+    initFirebase();
+    const db = admin.firestore();
+    
     const authHeader = req.headers.get('authorization') || '';
     if (!authHeader.startsWith('Bearer ')) return NextResponse.json({ success: false, message: 'Missing token' }, { status: 401 });
     const idToken = authHeader.split(' ')[1];
-  const decoded = await admin.auth().verifyIdToken(idToken);
-  const uid = decoded.uid;
-  const userEmail = decoded.email ?? null;
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    const uid = decoded.uid;
+    const userEmail = decoded.email ?? null;
 
     const body = await req.json();
     const { code } = body;
