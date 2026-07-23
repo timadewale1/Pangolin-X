@@ -23,6 +23,13 @@ export async function GET(req: NextRequest) {
     const stateFilter = url.searchParams.get("state");
     const cropFilter = url.searchParams.get("crop");
 
+    if (!adminDB) {
+      return NextResponse.json(
+        { error: "Firebase admin not configured" },
+        { status: 500 }
+      );
+    }
+
     const farmersSnapshot = await adminDB.collection("farmers").get();
     let farmers = farmersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 

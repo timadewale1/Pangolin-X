@@ -20,6 +20,14 @@ export async function GET(
     }
 
     const { id } = await params;
+
+    if (!adminDB) {
+      return NextResponse.json(
+        { error: "Firebase admin not configured" },
+        { status: 500 }
+      );
+    }
+
     const farmerDoc = await adminDB.collection("farmers").doc(id).get();
 
     if (!farmerDoc.exists) {

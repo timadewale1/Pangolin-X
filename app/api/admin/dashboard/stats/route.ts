@@ -17,6 +17,13 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    if (!adminDB) {
+      return NextResponse.json(
+        { error: "Firebase admin not configured" },
+        { status: 500 }
+      );
+    }
+
     const farmersSnapshot = await adminDB.collection("farmers").get();
     const farmers = farmersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 

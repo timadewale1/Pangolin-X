@@ -21,6 +21,13 @@ export async function POST(
 
     const { id } = await params;
 
+    if (!adminDB || !adminAuth) {
+      return NextResponse.json(
+        { error: "Firebase admin not configured" },
+        { status: 500 }
+      );
+    }
+
     // Delete farmer auth account
     try {
       await adminAuth.deleteUser(id);

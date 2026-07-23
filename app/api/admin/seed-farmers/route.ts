@@ -216,6 +216,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (!adminDB || !adminAuth) {
+      return NextResponse.json(
+        { error: "Firebase admin not configured" },
+        { status: 500 }
+      );
+    }
+
     // Define unequal distribution (more realistic)
     const stateDistribution: Record<string, number> = {
       Kano: 20,
