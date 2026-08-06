@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
@@ -112,7 +113,7 @@ export default function SignupPage() {
     { code: "ha", label: "Hausa" },
     { code: "yo", label: "Yoruba" },
     { code: "ig", label: "Igbo" },
-    { code: "fr", label: "Pidgin" },
+    { code: "pg", label: "Pidgin" },
   ];
 
   // prepare filtered arrays
@@ -573,52 +574,57 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
 
   if (missingSignupData) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
-        <div className="bg-white p-8 rounded shadow text-center max-w-md">
-          <h2 className="text-xl font-bold mb-4 text-red-600">Missing signup data</h2>
-          <p className="mb-4">We couldn&apos;t restore your signup details after payment. Please start the signup process again.</p>
-          <a href="/signup" className="inline-block bg-green-600 text-white px-4 py-2 rounded font-semibold">Return to Signup</a>
+      <div className="grid min-h-screen place-items-center bg-[#f6f7f3] px-5">
+        <div className="max-w-md rounded-3xl border border-[#eadfd7] bg-white p-8 text-center shadow-[0_24px_80px_rgba(24,49,39,.10)]">
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[#f6efe5] text-lg font-extrabold text-[#8b5e34]">!</span>
+          <h2 className="mt-5 text-2xl font-extrabold tracking-[-.03em] text-[#183127]">Let&apos;s restart your sign-up</h2>
+          <p className="mt-3 text-sm leading-6 text-[#617067]">We could not restore your information after payment. Start again and we will guide you through it.</p>
+          <a href="/signup" className="mt-6 inline-flex rounded-xl bg-[#28533b] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#183127]">Return to sign-up</a>
         </div>
       </div>
     );
   }
 
-  if (localLoading) return <Loader />;
+  if (localLoading) return <div className="grid min-h-screen place-items-center bg-[#f6f7f3]"><div className="rounded-3xl border border-[#dfe6dc] bg-white px-10 py-9 text-center shadow-[0_24px_80px_rgba(24,49,39,.10)]"><Loader /><p className="mt-5 text-sm font-bold text-[#28533b]">Preparing your farm account…</p><p className="mt-1 text-sm text-[#617067]">Please keep this page open.</p></div></div>;
 
   return (
-    <div className="min-h-screen p-6 bg-gray-50">
+    <div className="signup-flow min-h-screen bg-[#f6f7f3] px-5 py-6 sm:px-8 sm:py-10">
       <ToastContainer />
-      <div className="max-w-4xl mx-auto">
-        <div className="grid md:grid-cols-2 gap-6">
-          <form className="bg-white p-6 rounded shadow" onSubmit={handleSubmit(onSubmit)}>
-            <h2 className="text-2xl font-semibold mb-3 text-green-700">Create account</h2>
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-6 flex items-center justify-between"><Link href="/" className="flex items-center gap-2 font-extrabold text-[#183127]"><Image src="/Pangolin-x.png" alt="Pangolin-X" width={42} height={42} /> Pangolin-X</Link><Link href="/login" className="text-sm font-bold text-[#3f6b47]">Already registered? Log in</Link></div>
+        <div className="grid overflow-hidden rounded-[28px] border border-[#dfe6dc] bg-white shadow-[0_24px_80px_rgba(24,49,39,.09)] lg:grid-cols-[1.35fr_.65fr]">
+          <form className="bg-white p-6 sm:p-10" onSubmit={handleSubmit(onSubmit)}>
+            <div className="mb-6 flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#edf2e8] text-sm font-extrabold text-[#28533b]">1</span><div><p className="text-sm font-bold uppercase tracking-[.14em] text-[#4f7b55]">Set up your farm</p><p className="mt-0.5 text-xs text-[#718178]">Your details • farm • preferences</p></div></div>
+            <h2 className="mt-2 text-3xl font-extrabold tracking-[-.04em] text-[#183127]">Create your account</h2>
+            <p className="mb-7 mt-2 text-sm leading-6 text-[#617067]">Tell us about your farm once. We will use this to make your weather and advice more relevant.</p>
 
             {/* Package selector */}
-            <div className="mb-4">
-              <label className="text-sm font-medium">Choose plan</label>
+            <div className="mb-7 rounded-2xl border border-[#dfe6dc] bg-[#f8faf6] p-4 sm:p-5">
+              <label className="text-sm font-bold">Choose your access plan</label>
+              <p className="mt-1 text-sm text-[#617067]">Pick the option that best fits your farm. You can renew when it suits you.</p>
               <div className="flex gap-2 mt-2">
                 <button
                   type="button"
                   onClick={() => setSelectedPackage('monthly')}
-                  className={`px-3 py-2 rounded border ${selectedPackage === 'monthly' ? 'bg-green-50 text-green-700 border-green-600' : 'bg-white text-gray-700 border-gray-200'}`}
+                  className={`flex-1 px-4 py-3 rounded-xl border text-left text-sm font-bold ${selectedPackage === 'monthly' ? 'bg-green-50 text-green-700 border-green-600' : 'bg-white text-gray-700 border-gray-200'}`}
                 >
                   Monthly — ₦1,500
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectedPackage('yearly')}
-                  className={`px-3 py-2 rounded border ${selectedPackage === 'yearly' ? 'bg-green-50 text-green-700 border-green-600' : 'bg-white text-gray-700 border-gray-200'}`}
+                  className={`flex-1 px-4 py-3 rounded-xl border text-left text-sm font-bold ${selectedPackage === 'yearly' ? 'bg-green-50 text-green-700 border-green-600' : 'bg-white text-gray-700 border-gray-200'}`}
                 >
                   Yearly — ₦15,000
                 </button>
               </div>
             </div>
 
-            <label className="text-sm">Full name</label>
+            <div className="mb-5 grid gap-5 sm:grid-cols-2"><div><label className="text-sm">Full name</label>
             <input className="w-full border p-2 rounded mt-1 mb-2" value={formState.name} onChange={(e) => setFormState({ ...formState, name: e.target.value })} required />
 
-            <label className="text-sm">Phone number</label>
-            <input className="w-full border p-2 rounded mt-1 mb-2" value={formState.phone} onChange={(e) => setFormState({ ...formState, phone: e.target.value })} placeholder="+234..." required />
+            </div><div><label className="text-sm">Phone number</label>
+            <input className="w-full border p-2 rounded mt-1 mb-2" value={formState.phone} onChange={(e) => setFormState({ ...formState, phone: e.target.value })} placeholder="+234..." required /></div></div>
 
             <label className="text-sm">Email</label>
             <input type="email" className="w-full border p-2 rounded mt-1 mb-2" value={formState.email} onChange={(e) => setFormState({ ...formState, email: e.target.value })} required />
@@ -870,20 +876,35 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
             </div>
           </form>
 
-          <aside className="hidden md:block bg-gradient-to-b from-green-600 to-emerald-500 text-white p-6 rounded shadow">
-            <h3 className="text-xl font-semibold mb-3">Why create an account?</h3>
-            <ul className="list-disc pl-5 space-y-2 text-sm">
-              <li>Get weather updates for your exact LGA.</li>
-              <li>Receive AI-based advice tailored to your crops.</li>
-              <li>Fragility & risk advisories to protect your harvest.</li>
-              <li>Save your farm profile and preferences.</li>
+          <aside className="relative hidden overflow-hidden bg-[#183127] p-8 text-white lg:block">
+            <Image src="https://images.unsplash.com/photo-1464226184884-fa280b87c399?q=85&w=1000&auto=format&fit=crop" alt="A healthy farm field" fill className="object-cover opacity-25" />
+            <div className="relative flex h-full flex-col">
+            <p className="text-xs font-bold uppercase tracking-[.14em] text-[#d7e8d6]">Pangolin-X for farmers</p>
+            <h3 className="mt-4 text-3xl font-extrabold leading-tight tracking-[-.04em]">A clearer way to run your farm.</h3>
+            <p className="mt-4 text-sm leading-6 text-white/75">Your information stays focused on the things that help you make everyday farm decisions.</p>
+            <ul className="mt-7 space-y-4 text-sm text-white/85">
+              <li className="flex gap-3"><span className="font-bold text-[#b9df91]">01</span>Get weather updates for your exact LGA.</li>
+              <li className="flex gap-3"><span className="font-bold text-[#b9df91]">02</span>Receive AI-based advice tailored to your crops.</li>
+              <li className="flex gap-3"><span className="font-bold text-[#b9df91]">03</span>See early fragility and risk signals for your harvest.</li>
+              <li className="flex gap-3"><span className="font-bold text-[#b9df91]">04</span>Keep your farm profile and preferences together.</li>
             </ul>
-            <div className="mt-6 rounded overflow-hidden">
-              <Image src="https://images.unsplash.com/photo-1620200423727-8127f75d7f53?q=80&w=600&auto=format&fit=crop" alt="agri" width={600} height={320} className="object-cover" />
+            <div className="mt-auto rounded-2xl border border-white/15 bg-white/10 p-4 text-sm leading-6 text-white/80">You can update your crops, photos and location later in your farm settings.</div>
             </div>
           </aside>
         </div>
       </div>
+      <style jsx global>{`
+        .signup-flow label { color: #34473a; font-weight: 700; }
+        .signup-flow form > div { scroll-margin-top: 1rem; }
+        .signup-flow input:not([type="checkbox"]), .signup-flow button[type="button"] { border-color: #d9e1d7; border-radius: .75rem; }
+        .signup-flow input:not([type="checkbox"]) { min-height: 46px; padding: .72rem .85rem; color: #183127; outline: none; background: #fff; }
+        .signup-flow input:not([type="checkbox"]):focus { border-color: #4f7b55; box-shadow: 0 0 0 4px rgb(79 123 85 / .10); }
+        .signup-flow button[type="button"] { transition: border-color .18s ease, background .18s ease, transform .18s ease, box-shadow .18s ease; }
+        .signup-flow button[type="button"]:hover { border-color: #7da06c; background: #f8faf6; transform: translateY(-1px); }
+        .signup-flow button[type="submit"] { min-height: 52px; background: #28533b; border-radius: .85rem; padding: .85rem 1rem; transition: background .2s ease, transform .2s ease, box-shadow .2s ease; }
+        .signup-flow button[type="submit"]:hover { background: #183127; transform: translateY(-1px); }
+        .signup-flow input[type="checkbox"] { height: 18px; width: 18px; accent-color: #28533b; }
+      `}</style>
     </div>
   );
 }

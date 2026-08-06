@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from "firebase/storage";
 import { toast } from "react-toastify";
+import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
 import { useLanguage } from "@/context/LanguageContext";
 import { db, storage } from "@/lib/firebase";
@@ -15,6 +16,8 @@ type FarmerProfile = {
   state?: string;
   lga?: string;
   photoURL?: string;
+  lat?: number | null;
+  lon?: number | null;
 };
 
 export default function SettingsPage() {
@@ -25,8 +28,11 @@ export default function SettingsPage() {
   const [stateSearch, setStateSearch] = useState("");
   const [lgaSearch, setLgaSearch] = useState("");
   const [photoURL, setPhotoURL] = useState("");
+  const [lat, setLat] = useState<number | null>(null);
+  const [lon, setLon] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
 
   useEffect(() => {
@@ -38,6 +44,8 @@ export default function SettingsPage() {
         setState(data.state ?? "");
         setLga(data.lga ?? "");
         setPhotoURL(data.photoURL ?? "");
+        setLat(data.lat ?? null);
+        setLon(data.lon ?? null);
       }
       setPageLoading(false);
     })().catch(() => setPageLoading(false));
@@ -47,21 +55,51 @@ export default function SettingsPage() {
     if (!user) return;
     setSaving(true);
     try {
-      const fRef = doc(db, "farmers", user.uid);
       const coords = await geocodeFarmLocation(state, lga);
-      await updateDoc(fRef, {
+      const nextLat = coords?.lat ?? lat ?? null;
+      const nextLon = coords?.lon ?? lon ?? null;
+      await updateDoc(doc(db, "farmers", user.uid), {
         state: state || null,
         lga: lga || null,
-        lat: coords?.lat ?? null,
-        lon: coords?.lon ?? null,
+        lat: nextLat,
+        lon: nextLon,
       });
+      setLat(nextLat);
+      setLon(nextLon);
       toast.success(t("location_saved") ?? "Location updated");
-    } catch (err) {
-      console.error("save location failed", err);
+    } catch (error) {
+      console.error("save location failed", error);
       toast.error(t("toast_save_failed") ?? "Failed to save location");
     } finally {
       setSaving(false);
     }
+  }
+
+  async function detectLocation() {
+    if (!user || !navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const nextLat = position.coords.latitude;
+          const nextLon = position.coords.longitude;
+          setLat(nextLat);
+          setLon(nextLon);
+          await updateDoc(doc(db, "farmers", user.uid), { lat: nextLat, lon: nextLon });
+          toast.success(t("location_saved") ?? "Location updated");
+        } catch (error) {
+          console.error("detect location failed", error);
+          toast.error(t("toast_save_failed") ?? "Failed to save location");
+        } finally {
+          setLocating(false);
+        }
+      },
+      () => {
+        toast.error(t("toast_save_failed") ?? "Failed to save location");
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   }
 
   async function uploadPhoto(file: File) {
@@ -72,21 +110,16 @@ export default function SettingsPage() {
       const uploadTask = uploadBytesResumable(sRef, file);
 
       await new Promise<void>((resolve, reject) => {
-        uploadTask.on(
-          "state_changed",
-          undefined,
-          reject,
-          async () => {
-            const url = await getDownloadURL(uploadTask.snapshot.ref);
-            await updateDoc(doc(db, "farmers", user.uid), { photoURL: url });
-            setPhotoURL(url);
-            toast.success(t("toast_profile_uploaded") ?? "Profile image uploaded");
-            resolve();
-          }
-        );
+        uploadTask.on("state_changed", undefined, reject, async () => {
+          const url = await getDownloadURL(uploadTask.snapshot.ref);
+          await updateDoc(doc(db, "farmers", user.uid), { photoURL: url });
+          setPhotoURL(url);
+          toast.success(t("toast_profile_uploaded") ?? "Profile image uploaded");
+          resolve();
+        });
       });
-    } catch (err) {
-      console.error("profile upload error:", err);
+    } catch (error) {
+      console.error("profile upload error:", error);
       toast.error(t("toast_upload_failed") ?? "Upload failed");
     } finally {
       setUploading(false);
@@ -94,6 +127,8 @@ export default function SettingsPage() {
   }
 
   if (loading || pageLoading) return <Loader />;
+
+  const lgas = NIGERIA_STATES_LGAS[state] ?? [];
 
   return (
     <div className="space-y-6">
@@ -106,8 +141,8 @@ export default function SettingsPage() {
         <div className="rounded-3xl border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-semibold text-slate-900">{t("profile_picture") ?? "Profile picture"}</h2>
           <div className="mt-4 flex items-center gap-4">
-            <div className="h-20 w-20 overflow-hidden rounded-full border border-slate-200 bg-slate-50">
-              {photoURL ? <img src={photoURL} alt="Profile" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xl font-semibold text-slate-400">P</div>}
+            <div className="relative h-20 w-20 overflow-hidden rounded-full border border-slate-200 bg-slate-50">
+              {photoURL ? <Image src={photoURL} alt="Profile" fill className="object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xl font-semibold text-slate-400">P</div>}
             </div>
             <div className="flex-1 space-y-3">
               <label className="inline-flex cursor-pointer items-center rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
@@ -135,6 +170,18 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">{t("exact_location") ?? "Exact location"}</h2>
+            <p className="mt-1 text-sm text-slate-600">{lat !== null && lon !== null ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : (t("no_coords") ?? "No coordinates available")}</p>
+          </div>
+          <button onClick={detectLocation} disabled={locating} className="rounded-full border border-emerald-200 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">
+            {locating ? (t("loading") ?? "Loading...") : (t("detect_location") ?? "Detect location")}
+          </button>
+        </div>
+      </section>
+
       <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <h2 className="text-lg font-semibold text-slate-900">{t("location_section") ?? "Location"}</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -146,11 +193,21 @@ export default function SettingsPage() {
               className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
             />
             <div className="mt-3 max-h-52 space-y-2 overflow-y-auto">
-              {Object.keys(NIGERIA_STATES_LGAS).filter((s) => (stateSearch ? s.toLowerCase().includes(stateSearch.toLowerCase()) : true)).map((s) => (
-                <button key={s} onClick={() => { setState(s); setLga(""); setLgaSearch(""); }} className={`w-full rounded-2xl border px-3 py-2 text-left text-sm ${state === s ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}>
-                  {s}
-                </button>
-              ))}
+              {Object.keys(NIGERIA_STATES_LGAS)
+                .filter((s) => (stateSearch ? s.toLowerCase().includes(stateSearch.toLowerCase()) : true))
+                .map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setState(s);
+                      setLga("");
+                      setLgaSearch("");
+                    }}
+                    className={`w-full rounded-2xl border px-3 py-2 text-left text-sm ${state === s ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}
+                  >
+                    {s}
+                  </button>
+                ))}
             </div>
           </div>
 
@@ -163,11 +220,17 @@ export default function SettingsPage() {
               disabled={!state}
             />
             <div className="mt-3 max-h-52 space-y-2 overflow-y-auto">
-              {(NIGERIA_STATES_LGAS[state] ?? []).filter((item) => (lgaSearch ? item.toLowerCase().includes(lgaSearch.toLowerCase()) : true)).map((item) => (
-                <button key={item} onClick={() => setLga(item)} className={`w-full rounded-2xl border px-3 py-2 text-left text-sm ${lga === item ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}>
-                  {item}
-                </button>
-              ))}
+              {lgas
+                .filter((item) => (lgaSearch ? item.toLowerCase().includes(lgaSearch.toLowerCase()) : true))
+                .map((item) => (
+                  <button
+                    key={item}
+                    onClick={() => setLga(item)}
+                    className={`w-full rounded-2xl border px-3 py-2 text-left text-sm ${lga === item ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}
+                  >
+                    {item}
+                  </button>
+                ))}
             </div>
           </div>
         </div>

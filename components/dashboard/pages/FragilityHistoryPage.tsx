@@ -14,6 +14,14 @@ type Item = {
   createdAt?: string | Date | { seconds?: number };
 };
 
+function toDate(createdAt?: Item["createdAt"]) {
+  if (!createdAt) return null;
+  if (createdAt instanceof Date) return createdAt;
+  if (typeof createdAt === "string") return new Date(createdAt);
+  if (typeof createdAt === "object" && "seconds" in createdAt) return new Date((createdAt.seconds ?? 0) * 1000);
+  return null;
+}
+
 function normalizedSectionTitle(title: string | undefined, t: (k: string) => string) {
   const value = String(title ?? "").toLowerCase();
   if (value.includes("flood") || value.includes("drought")) return t("flood_drought_risk") ?? title ?? "";
@@ -59,7 +67,7 @@ export default function FragilityHistoryPage() {
   }, [user]);
 
   const grouped = useMemo(() => items.reduce((acc, item) => {
-    const created = item.createdAt ? new Date(typeof item.createdAt === "string" || item.createdAt instanceof Date ? item.createdAt : (item.createdAt.seconds ?? 0) * 1000) : new Date(0);
+    const created = toDate(item.createdAt) ?? new Date(0);
     const key = created.toISOString().slice(0, 10);
     (acc[key] ??= []).push(item);
     return acc;
@@ -69,24 +77,24 @@ export default function FragilityHistoryPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-emerald-50 p-6 shadow-sm">
-        <p className="text-sm uppercase tracking-[0.2em] text-emerald-700">{t("fragility_history_tab")}</p>
+      <section className="overflow-hidden rounded-[1.25rem] border border-[#dce3d9] bg-[#183b29] p-6 text-white shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-[.14em] text-[#dce9ce]">Risk archive</p>
         <div className="mt-2 flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold text-slate-900">{t("fragility_history_tab")}</h1>
-          <div className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-sm text-emerald-800">
+          <div><h1 className="text-2xl font-bold tracking-[-.035em]">Risk history</h1><p className="mt-2 text-sm leading-6 text-[#e5eee3]">See how local risks changed over time and revisit the action that was recommended.</p></div>
+          <div className="rounded-lg bg-white/15 px-3 py-2 text-sm text-white">
             {items.length} {t("items")}
           </div>
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6">
+      <section className="farm-card p-5 md:p-6">
         {items.length === 0 ? (
-          <p className="text-slate-600">{t("no_fragility_history") ?? "No fragility advisories yet."}</p>
+          <div className="rounded-xl border border-dashed border-[#cbd8ca] bg-[#f8faf6] p-6 text-sm leading-6 text-[#617067]">No saved risk checks yet. Refresh the current risk page to save a local risk assessment here.</div>
         ) : (
           <div className="space-y-6">
             {Object.entries(grouped).map(([date, dayItems]) => (
               <div key={date} className="space-y-3">
-                <div className="text-sm font-medium text-slate-500">{new Date(date).toLocaleDateString()}</div>
+                <div className="text-xs font-bold uppercase tracking-[.12em] text-[#617067]">{new Date(date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
                 <div className="grid gap-3">
                   {dayItems.map((item) => (
                     <button
@@ -96,12 +104,12 @@ export default function FragilityHistoryPage() {
                         setSelected(item);
                         setOpen(true);
                       }}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left hover:border-emerald-300 hover:bg-emerald-50/40"
+                      className="rounded-xl border border-[#dce3d9] bg-white p-4 text-left transition hover:border-[#aac1ad] hover:bg-[#f8faf6]"
                     >
                       <div className="font-medium text-slate-900">{item.header ?? (t("analysis") ?? "Analysis")}</div>
                       <div className="mt-3 grid gap-3">
                         {(item.sections ?? []).map((section, idx) => (
-                          <div key={idx} className="rounded-2xl border border-white bg-white p-3">
+                          <div key={idx} className="rounded-lg border border-[#e3e8df] bg-[#f8faf6] p-3">
                             <div className="flex items-center justify-between gap-3">
                               <div className="text-sm font-medium text-slate-900">{normalizedSectionTitle(section.title, t)}</div>
                               <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${section.severity === "high" ? "bg-rose-100 text-rose-700" : section.severity === "moderate" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
@@ -122,7 +130,7 @@ export default function FragilityHistoryPage() {
               {hasMore ? (
                 <button
                   onClick={() => loadPage(false).catch(() => setLoadingMore(false))}
-                  className="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  className="action-secondary"
                   disabled={loadingMore}
                 >
                   {loadingMore ? (t("loading") ?? "Loading...") : (t("load_more") ?? "Load more")}
@@ -138,11 +146,19 @@ export default function FragilityHistoryPage() {
       <FragilityDetailModal
         open={open}
         onClose={() => setOpen(false)}
-        fragility={selected ? {
-          header: selected.header,
-          sections: selected.sections ?? [],
-          createdAt: selected.createdAt instanceof Date ? selected.createdAt : selected.createdAt && typeof selected.createdAt === "object" && "seconds" in selected.createdAt ? selected.createdAt : undefined,
-        } as { header?: string; sections?: { title: string; summary: string; severity: string }[]; createdAt?: string | Date | { seconds?: number } } : null}
+        fragility={
+          selected
+            ? {
+                header: selected.header,
+                sections: (selected.sections ?? []).map((section) => ({
+                  title: section.title ?? "",
+                  summary: section.summary ?? "",
+                  severity: section.severity ?? "low",
+                })),
+                createdAt: toDate(selected.createdAt) ?? undefined,
+              }
+            : null
+        }
       />
     </div>
   );

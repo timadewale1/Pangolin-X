@@ -1,17 +1,12 @@
-// components/LanguageButton.tsx
 "use client";
-import { FiGlobe } from "react-icons/fi";
+
+import { Globe2 } from "lucide-react";
 import { useState } from "react";
+import { useLanguage } from "@/context/LanguageContext";
 import LanguageModal from "./LanguageModal";
 
 export default function LanguageButton() {
   const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button onClick={() => setOpen(true)} className="p-2 rounded-full border hover:bg-gray-100">
-        <FiGlobe size={18} />
-      </button>
-      {open && <LanguageModal openProp={open} onClose={() => setOpen(false)} />}
-    </>
-  );
+  const { t } = useLanguage();
+  return <><button type="button" onClick={() => setOpen(true)} aria-label={t("open_language")} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#dce3d9] bg-white px-3 text-sm font-bold text-[#28533b] transition hover:bg-[#f8faf6]"><Globe2 className="h-4 w-4" /><span className="hidden sm:inline">{t("language")}</span></button>{open ? <LanguageModal openProp onClose={() => setOpen(false)} /> : null}</>;
 }

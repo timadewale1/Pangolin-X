@@ -1,14 +1,16 @@
 "use client";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
 import Image from "next/image";
+import { useMemo, useState } from "react";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { toast } from "react-toastify";
+import { motion } from "framer-motion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useLang } from "@/hooks/useLang";
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { toast } from "react-toastify";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { CROP_OPTIONS } from "@/lib/crops"; // ✅ correct import
+import { getCropImage } from "@/lib/crops";
+import { getCropGrowthInfo } from "@/lib/cropGrowth";
 
 interface CropStageModalProps {
   open: boolean;
@@ -16,47 +18,25 @@ interface CropStageModalProps {
   crops: { id: string; name: string }[];
   uid: string;
   onSaved: (updatedStages: Record<string, { stage?: string; plantedAt?: string }>) => void;
-  // optional current statuses so we can prefill selections
   cropStatus?: Record<string, { stage?: string; plantedAt?: string }>;
-  // optional single crop target to only edit one crop
   targetCropId?: string | null;
 }
 
 export default function CropStageModal({ open, onClose, crops, uid, onSaved, cropStatus, targetCropId }: CropStageModalProps) {
   const { t } = useLang();
-  // initialize selections from provided cropStatus for the crops being edited
-  const [selectedStages, setSelectedStages] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    try {
-      if (Array.isArray(crops) && cropStatus) {
-        crops.forEach((c) => {
-          if (c && c.id && cropStatus[c.id] && cropStatus[c.id].stage) {
-            init[c.id] = cropStatus[c.id].stage as string;
-          }
-        });
-      }
-    } catch {
-      // ignore
-    }
-    return init;
-  });
-  const [plantedDays, setPlantedDays] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    try {
-      if (Array.isArray(crops) && cropStatus) {
-        crops.forEach((c) => {
-          const plantedAt = cropStatus[c.id]?.plantedAt;
-          if (plantedAt) {
-            const diff = Math.max(0, Math.floor((Date.now() - new Date(plantedAt).getTime()) / 86400000));
-            init[c.id] = String(diff);
-          }
-        });
-      }
-    } catch {
-      // ignore
-    }
-    return init;
-  });
+  const targetCrops = useMemo(() => crops.filter((crop) => !targetCropId || crop.id === targetCropId), [crops, targetCropId]);
+
+  const [selectedStages, setSelectedStages] = useState<Record<string, string>>(() =>
+    Object.fromEntries(targetCrops.map((crop) => [crop.id, cropStatus?.[crop.id]?.stage ?? "just_planted"]))
+  );
+  const [plantedDays, setPlantedDays] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      targetCrops.map((crop) => {
+        const plantedAt = cropStatus?.[crop.id]?.plantedAt;
+        return [crop.id, plantedAt ? String(getCropGrowthInfo(crop.id, { plantedAt }).daysPlanted ?? "") : ""];
+      })
+    )
+  );
   const [loading, setLoading] = useState(false);
 
   const cropStages = [
@@ -67,128 +47,88 @@ export default function CropStageModal({ open, onClose, crops, uid, onSaved, cro
     { stage: "harvest_ready", label: t("stage_harvest_ready_label") || "Harvest Ready", desc: t("stage_harvest_ready_desc") || "Ready for harvest." },
   ];
 
-  const handleSelect = (cropId: string, stage: string) => {
-    setSelectedStages((prev) => ({ ...prev, [cropId]: stage }));
-  };
-
-  const handleDaysChange = (cropId: string, value: string) => {
-    setPlantedDays((prev) => ({ ...prev, [cropId]: value }));
-  };
-
-  const handleSave = async () => {
+  async function handleSave() {
     if (!uid) return;
     setLoading(true);
     try {
-      // normalize selectedStages to the expected shape: { cropId: { stage, plantedAt? } }
-      const normalized: Record<string, { stage?: string; plantedAt?: string }> = {};
-      Object.keys(selectedStages).forEach((k) => {
-        const days = plantedDays[k] ? Number(plantedDays[k]) : NaN;
-        const plantedAt = Number.isFinite(days) && days >= 0
-          ? new Date(Date.now() - days * 86400000).toISOString()
-          : merged[k]?.plantedAt;
-        normalized[k] = { stage: selectedStages[k], plantedAt };
-      });
-
       const farmerRef = doc(db, "farmers", uid);
-      // merge with existing cropStatus to avoid deleting other crops' statuses
       const snap = await getDoc(farmerRef);
-      let merged: Record<string, { stage?: string; plantedAt?: string }> = {};
-      if (snap.exists()) {
-        const data = snap.data() as { cropStatus?: Record<string, { stage?: string; plantedAt?: string }> };
-        merged = { ...(data.cropStatus ?? {}) };
+      const merged = snap.exists() ? { ...((snap.data() as { cropStatus?: Record<string, { stage?: string; plantedAt?: string }> }).cropStatus ?? {}) } : {};
+
+      for (const crop of targetCrops) {
+        const days = plantedDays[crop.id] ? Number(plantedDays[crop.id]) : NaN;
+        const plantedAt = Number.isFinite(days) && days >= 0 ? new Date(Date.now() - days * 86400000).toISOString() : merged[crop.id]?.plantedAt ?? new Date().toISOString();
+        merged[crop.id] = { stage: selectedStages[crop.id] ?? "just_planted", plantedAt };
       }
-      Object.keys(normalized).forEach((k) => {
-        merged[k] = {
-          stage: normalized[k].stage,
-          plantedAt: merged[k]?.plantedAt ?? normalized[k].plantedAt ?? new Date().toISOString(),
-        };
-      });
 
       await updateDoc(farmerRef, { cropStatus: merged });
       onSaved(merged);
-      toast.success(t("crop_stages_updated") || "Crop stages updated successfully!");
+      toast.success(t("crop_stages_updated") || "Crop stages updated successfully");
       onClose();
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
       toast.error(t("crop_stages_failed") || "Failed to update crop stages");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-green-200 p-6">
+      <DialogContent className="max-h-[80vh] max-w-5xl overflow-y-auto rounded-2xl border border-emerald-200 bg-white p-6 shadow-xl">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-green-700 text-center">
-            {t("update_crop_stages_modal_title") || "Please complete all crop details before continuing"}
+          <DialogTitle className="text-center text-2xl font-bold text-slate-900">
+            {t("update_crop_stages_modal_title") || "Update crop stages"}
           </DialogTitle>
         </DialogHeader>
 
-        <p className="text-center text-gray-600 mt-2 mb-4 font-medium">
-          {t("update_crop_stages_modal_desc") || "Select the current stage for each of your crops."}
+        <p className="mb-4 text-center text-sm text-slate-600">
+          {t("update_crop_stages_modal_desc") || "Set the stage and the number of days planted for each crop."}
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-          {(crops.filter((c) => !targetCropId || c.id === targetCropId)).map((crop) => {
-            const cropInfo = CROP_OPTIONS.find((c) => c.id === crop.id);
-            return (
-              <motion.div
-                key={crop.id}
-                whileHover={{ scale: 1.03 }}
-                className="p-4 bg-green-50 rounded-xl shadow hover:shadow-lg transition"
-              >
-                <div className="flex flex-col items-center">
-                  <Image
-                    src={cropInfo?.img || `https://source.unsplash.com/400x400/?${crop.name}`}
-                    alt={crop.name}
-                    width={90}
-                    height={90}
-                    className="rounded-full object-cover"
-                  />
-                  <h3 className="mt-3 font-semibold text-lg text-green-700">{crop.name}</h3>
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {targetCrops.map((crop) => (
+            <motion.div key={crop.id} whileHover={{ y: -2 }} className="rounded-2xl border border-emerald-100 bg-slate-50 p-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <Image src={getCropImage(crop.id)} alt={crop.name} width={72} height={72} className="rounded-2xl object-cover" />
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">{crop.name}</h3>
+                  <p className="text-xs uppercase tracking-[0.2em] text-emerald-600">{t("days_planted") || "Days planted"}</p>
                 </div>
+              </div>
 
-                <div className="mt-4 grid grid-cols-1 gap-2">
-                  <div className="rounded-lg border border-green-100 bg-white p-3">
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      {t("days_planted") || "Days planted"}
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={plantedDays[crop.id] ?? ""}
-                      onChange={(e) => handleDaysChange(crop.id, e.target.value)}
-                      placeholder="e.g. 14"
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-green-500"
-                    />
-                  </div>
-                  {cropStages.map((s) => (
-                    <button
-                      key={s.stage}
-                      onClick={() => handleSelect(crop.id, s.stage)}
-                      className={`text-left p-3 rounded-lg border transition ${
-                        selectedStages[crop.id] === s.stage
-                          ? "bg-green-600 text-white"
-                          : "bg-white hover:bg-green-100 text-gray-700"
-                      }`}
-                    >
-                      <span className="font-medium">{s.label}</span>
-                      <p className="text-xs">{s.desc}</p>
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-            );
-          })}
+              <div className="mt-4 rounded-2xl border border-white bg-white p-3">
+                <input
+                  type="number"
+                  min={0}
+                  value={plantedDays[crop.id] ?? ""}
+                  onChange={(event) => setPlantedDays((current) => ({ ...current, [crop.id]: event.target.value }))}
+                  placeholder="e.g. 14"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                {cropStages.map((stage) => (
+                  <button
+                    key={stage.stage}
+                    type="button"
+                    onClick={() => setSelectedStages((current) => ({ ...current, [crop.id]: stage.stage }))}
+                    className={`rounded-2xl border p-3 text-left transition ${
+                      selectedStages[crop.id] === stage.stage ? "border-emerald-500 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-white text-slate-700 hover:border-emerald-200"
+                    }`}
+                  >
+                    <div className="font-medium">{stage.label}</div>
+                    <p className="mt-1 text-xs leading-6 text-slate-500">{stage.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          ))}
         </div>
 
-        <div className="flex justify-center mt-6">
-          <Button
-            disabled={loading}
-            onClick={handleSave}
-            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg"
-          >
+        <div className="mt-6 flex justify-center">
+          <Button disabled={loading} onClick={handleSave} className="rounded-full bg-emerald-600 px-6 py-3 text-white hover:bg-emerald-700">
             {loading ? t("saving") || "Saving..." : t("save") || "Save"}
           </Button>
         </div>

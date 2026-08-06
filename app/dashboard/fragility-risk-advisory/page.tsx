@@ -1,3 +1,6 @@
-import FragilityRiskAdvisoryPage from "@/components/dashboard/pages/FragilityRiskAdvisoryPage";
+import FragilityPage from "../fragility/page";
 
-export default FragilityRiskAdvisoryPage;
+/** Keeps established risk-advisory links on the rebuilt live risk workspace. */
+export default function FragilityRiskAdvisoryRoute() {
+  return <FragilityPage />;
+}

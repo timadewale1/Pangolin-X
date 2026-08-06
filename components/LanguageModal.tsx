@@ -1,73 +1,16 @@
-// components/LanguageModal.tsx
 "use client";
-import React from "react";
+
+import { Check, Globe2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useLanguage } from "@/context/LanguageContext";
 
-  export default function LanguageModal({ openProp, onClose }: { openProp?: boolean; onClose?: () => void }) {
-    const { lang, setLang } = useLanguage();
+const languages = [
+  { code: "en", label: "English" }, { code: "ha", label: "Hausa" }, { code: "ig", label: "Igbo" }, { code: "yo", label: "Yoruba" }, { code: "pg", label: "Nigerian Pidgin" },
+] as const;
 
-    const choose = async (l: typeof lang) => {
-      setLang(l);
-      localStorage.setItem("pangolin-lang-chosen", "true");
-
-      // If user is logged in, update their language preference
-      try {
-        const auth = (await import("@/lib/firebase")).auth;
-        if (auth.currentUser) {
-          const { doc, updateDoc } = await import("firebase/firestore");
-          const { db } = await import("@/lib/firebase");
-          await updateDoc(doc(db, "farmers", auth.currentUser.uid), {
-            language: l
-          });
-        }
-      } catch (err) {
-        console.warn("Failed to update user language preference:", err);
-      }
-      
-      if (onClose) onClose();
-    };
-
-    if (!openProp) return null;
-
-    // Modal content
-    const modalContent = (
-      <div
-        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
-        onClick={(e) => {
-          if (e.target === e.currentTarget && onClose) {
-            onClose();
-          }
-        }}
-        style={{ pointerEvents: "auto" }}
-      >
-        <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-green-700">🌍 Choose Language</h3>
-            <button
-              onClick={onClose}
-              className="text-gray-600 hover:text-gray-800 transition"
-            >
-              ✕
-            </button>
-          </div>
-
-          <p className="text-sm text-gray-600 mb-5">
-            Select the language you want Pangolin-x to use. You can change it later.
-          </p>
-
-          <div className="grid grid-cols-2 gap-3">
-            <button className={`p-2 border rounded ${lang === "en" ? "bg-green-50 border-green-400" : ""}`} onClick={() => choose("en")}>English</button>
-            <button className={`p-2 border rounded ${lang === "ha" ? "bg-green-50 border-green-400" : ""}`} onClick={() => choose("ha")}>Hausa</button>
-            <button className={`p-2 border rounded ${lang === "ig" ? "bg-green-50 border-green-400" : ""}`} onClick={() => choose("ig")}>Igbo</button>
-            <button className={`p-2 border rounded ${lang === "yo" ? "bg-green-50 border-green-400" : ""}`} onClick={() => choose("yo")}>Yoruba</button>
-            <button className={`p-2 border rounded col-span-2 ${lang === "pg" ? "bg-green-50 border-green-400" : ""}`} onClick={() => choose("pg")}>Pidgin</button>
-          </div>
-        </div>
-      </div>
-    );
-
-    // Use portal to render modal at root
-    return typeof window !== "undefined" ? createPortal(modalContent, document.body) : null;
-  }
-// ...existing code...
+export default function LanguageModal({ openProp, onClose }: { openProp?: boolean; onClose?: () => void }) {
+  const { lang, setLang, t } = useLanguage();
+  if (!openProp || typeof window === "undefined") return null;
+  const choose = (code: typeof lang) => { setLang(code); onClose?.(); };
+  return createPortal(<div className="fixed inset-0 z-[9999] grid place-items-center bg-black/40 p-4" onClick={(event) => { if (event.currentTarget === event.target) onClose?.(); }}><section role="dialog" aria-modal="true" aria-labelledby="language-title" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><div className="grid h-10 w-10 place-items-center rounded-xl bg-[#edf2e8] text-[#28533b]"><Globe2 className="h-5 w-5" /></div><h2 id="language-title" className="mt-4 text-xl font-bold tracking-[-.03em] text-[#183127]">{t("choose_language")}</h2><p className="mt-1 text-sm leading-6 text-[#617067]">{t("language_help")}</p></div><button type="button" onClick={onClose} aria-label={t("close_sidebar")} className="rounded-lg p-2 text-[#617067] hover:bg-[#f1f2eb]"><X className="h-5 w-5" /></button></div><div className="mt-5 grid gap-2 sm:grid-cols-2">{languages.map((item) => <button type="button" key={item.code} onClick={() => choose(item.code)} className={`flex min-h-12 items-center justify-between rounded-xl border px-4 text-left text-sm font-bold transition ${lang === item.code ? "border-[#6b8b50] bg-[#edf2e8] text-[#183127]" : "border-[#dce3d9] text-[#44564a] hover:bg-[#f8faf6]"}`}><span>{item.label}</span>{lang === item.code ? <Check className="h-4 w-4 text-[#28533b]" /> : null}</button>)}</div></section></div>, document.body);
+}

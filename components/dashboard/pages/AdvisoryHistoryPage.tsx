@@ -17,6 +17,19 @@ type Advisory = {
   createdAt?: string | Date | { seconds?: number };
 };
 
+function toDate(createdAt?: Advisory["createdAt"]) {
+  if (!createdAt) return null;
+  if (createdAt instanceof Date) return createdAt;
+  if (typeof createdAt === "string") return new Date(createdAt);
+  if (typeof createdAt === "object" && "seconds" in createdAt) return new Date((createdAt.seconds ?? 0) * 1000);
+  return null;
+}
+
+function formatCreatedAt(createdAt?: Advisory["createdAt"]) {
+  const date = toDate(createdAt);
+  return date ? date.toLocaleString() : "";
+}
+
 export default function AdvisoryHistoryPage() {
   const { user, loading } = useAuth();
   const { t } = useLanguage();
@@ -58,39 +71,42 @@ export default function AdvisoryHistoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  const grouped = useMemo(() => items.reduce((acc, item) => {
-    const created = item.createdAt ? new Date(typeof item.createdAt === "string" || item.createdAt instanceof Date ? item.createdAt : (item.createdAt.seconds ?? 0) * 1000) : new Date(0);
-    const key = created.toISOString().slice(0, 10);
-    (acc[key] ??= []).push(item);
-    return acc;
-  }, {} as Record<string, Advisory[]>), [items]);
+  const grouped = useMemo(
+    () =>
+      items.reduce((acc, item) => {
+        const created = toDate(item.createdAt) ?? new Date(0);
+        const key = created.toISOString().slice(0, 10);
+        (acc[key] ??= []).push(item);
+        return acc;
+      }, {} as Record<string, Advisory[]>),
+    [items]
+  );
 
   if (loading || pageLoading) return <Loader />;
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-lime-50 p-6 shadow-sm">
+      <section className="overflow-hidden rounded-[1.25rem] border border-[#dce3d9] bg-[#183b29] p-6 text-white shadow-sm">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-emerald-700">{t("history_tab")}</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900">
-              {farmName ? `${farmName}'s ${t("history_tab").toLowerCase()}` : t("history_tab")}
-            </h1>
+            <p className="text-xs font-bold uppercase tracking-[.14em] text-[#dce9ce]">Advice archive</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-[-.035em]">{farmName ? `${farmName}'s advice history` : "Advice history"}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#e5eee3]">Review past farm recommendations, compare what changed, and keep track of decisions made through the season.</p>
           </div>
-          <div className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-sm text-emerald-800">
+          <div className="rounded-lg bg-white/15 px-3 py-2 text-sm text-white">
             {items.length} {t("items")}
           </div>
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6">
+      <section className="farm-card p-5 md:p-6">
         {items.length === 0 ? (
-          <p className="text-slate-600">{t("no_advisories")}</p>
+          <div className="rounded-xl border border-dashed border-[#cbd8ca] bg-[#f8faf6] p-6 text-sm leading-6 text-[#617067]">No saved advice yet. When you generate an advisory for your crops, it will appear here with the date and affected crops.</div>
         ) : (
           <div className="space-y-6">
             {Object.entries(grouped).map(([date, dayItems]) => (
               <div key={date} className="space-y-3">
-                <div className="text-sm font-medium text-slate-500">{new Date(date).toLocaleDateString()}</div>
+                <div className="text-xs font-bold uppercase tracking-[.12em] text-[#617067]">{new Date(date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
                 <div className="grid gap-3">
                   {dayItems.map((item) => (
                     <button
@@ -100,19 +116,13 @@ export default function AdvisoryHistoryPage() {
                         setSelected(item);
                         setModalOpen(true);
                       }}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/40"
+                      className="rounded-xl border border-[#dce3d9] bg-white p-4 text-left transition hover:border-[#aac1ad] hover:bg-[#f8faf6]"
                     >
                       <div className="flex items-center justify-between gap-4">
-                        <div className="font-medium text-slate-900">
-                          {(item.crops?.[0] ?? "Farm") + " advisory"}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {item.createdAt ? new Date(typeof item.createdAt === "string" || item.createdAt instanceof Date ? item.createdAt : (item.createdAt.seconds ?? 0) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
-                        </div>
+                        <div className="font-medium text-slate-900">{item.crops?.[0] ? `${item.crops[0]} ${t("saved_advisory")}` : t("saved_advisory")}</div>
+                        <div className="text-xs text-slate-500">{formatCreatedAt(item.createdAt)}</div>
                       </div>
-                      <p className="mt-2 line-clamp-2 text-sm text-slate-600">
-                        {item.advice ?? item.advisory ?? "Open to view details"}
-                      </p>
+                      <p className="mt-2 line-clamp-2 text-sm text-slate-600">{item.advice ?? item.advisory ?? (t("open_to_view_details") ?? "Open to view details")}</p>
                     </button>
                   ))}
                 </div>
@@ -121,11 +131,7 @@ export default function AdvisoryHistoryPage() {
 
             <div className="pt-2">
               {hasMore ? (
-                <button
-                  onClick={() => loadPage(false).catch(() => setLoadingMore(false))}
-                  className="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                  disabled={loadingMore}
-                >
+                <button onClick={() => loadPage(false).catch(() => setLoadingMore(false))} className="action-secondary" disabled={loadingMore}>
                   {loadingMore ? (t("loading") ?? "Loading...") : (t("load_more") ?? "Load more")}
                 </button>
               ) : (
@@ -139,11 +145,15 @@ export default function AdvisoryHistoryPage() {
       <AdvisoryDetailModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-      advisory={selected ? {
-          advice: selected.advice ?? selected.advisory ?? "",
-          crops: selected.crops ?? [],
-          createdAt: selected.createdAt instanceof Date ? selected.createdAt : selected.createdAt && typeof selected.createdAt === "object" && "seconds" in selected.createdAt ? new Date((selected.createdAt.seconds ?? 0) * 1000) : selected.createdAt,
-        } as { advice: string; crops: string[]; createdAt: Date | string } : null}
+        advisory={
+          selected
+          ? {
+                advice: selected.advice ?? selected.advisory ?? "",
+                crops: selected.crops ?? [],
+                createdAt: toDate(selected.createdAt) ?? new Date(),
+              }
+            : null
+        }
       />
     </div>
   );

@@ -1,229 +1,202 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
-import { useAuth } from "@/hooks/useAuth";
-import { useLanguage } from "@/context/LanguageContext";
-import { db } from "@/lib/firebase";
-import { geocodeFarmLocation } from "@/lib/location";
-import { addForecastAdvisory } from "@/lib/firestore";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import AdvisoryRichContent from "@/components/advisory/AdvisoryRichContent";
 import Loader from "@/components/Loader";
+import { useDashboard } from "@/context/DashboardContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { addForecastAdvisory } from "@/lib/firestore";
+import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
+import type { AdvisoryResponse, ForecastDay } from "@/lib/dashboard-types";
 
-type ForecastDay = {
-  dt: number;
-  temp: { min?: number; max?: number; day?: number; night?: number };
-  weather: Array<{ description?: string }>;
-};
+function formatDay(day: ForecastDay) {
+  return new Date(day.dt * 1000).toLocaleDateString();
+}
 
 export default function ForecastAdvisoryPage() {
-  const { user, loading } = useAuth();
+  const { user, farm } = useDashboard();
   const { lang, t } = useLanguage();
-  const [farm, setFarm] = useState<{ lat?: number; lon?: number; state?: string; lga?: string; crops?: string[]; cropStatus?: Record<string, { stage?: string }> } | null>(null);
-  const [forecastDays, setForecastDays] = useState(3);
+  const [days, setDays] = useState(5);
   const [forecast, setForecast] = useState<ForecastDay[]>([]);
   const [selected, setSelected] = useState<ForecastDay | null>(null);
   const [advice, setAdvice] = useState("");
+  const [richAdvice, setRichAdvice] = useState<AdvisoryResponse | null>(null);
   const [loadingForecast, setLoadingForecast] = useState(false);
   const [loadingAdvice, setLoadingAdvice] = useState(false);
-  const [pageLoading, setPageLoading] = useState(true);
-  const [forecastError, setForecastError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const snap = await getDoc(doc(db, "farmers", user.uid));
-      if (snap.exists()) setFarm(snap.data() as typeof farm);
-      setPageLoading(false);
-    })().catch(() => setPageLoading(false));
-  }, [user]);
+  const coords = useMemo(() => (farm?.lat && farm?.lon ? { lat: farm.lat, lon: farm.lon } : null), [farm?.lat, farm?.lon]);
 
-  async function resolveCoords() {
-    if (farm?.lat && farm?.lon) return { lat: farm.lat, lon: farm.lon };
-    const geo = await geocodeFarmLocation(farm?.state ?? null, farm?.lga ?? null);
-    if (geo) {
-      setFarm((current) => (current ? { ...current, lat: geo.lat, lon: geo.lon } : current));
-      return geo;
-    }
-    return null;
-  }
+  const generateForecastAdvice = useCallback(
+    async (day: ForecastDay) => {
+      if (!user || !farm) return;
+      setLoadingAdvice(true);
+      try {
+        const cropStages = Object.fromEntries(
+          (farm.crops ?? []).map((crop) => [crop, { stage: farm.cropStatus?.[crop]?.stage ?? "unknown", plantedAt: farm.cropStatus?.[crop]?.plantedAt }])
+        );
+        const response = await fetch("/api/advice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            crops: farm.crops ?? [],
+            weather: day,
+            lang: farm.language ?? lang ?? "en",
+            cropStages,
+            forecastDate: new Date(day.dt * 1000).toISOString(),
+            state: farm.state,
+            lga: farm.lga,
+            soilSummary: farm.soilSummary ?? null,
+            soil: farm.soil ?? null,
+          }),
+        });
+        const json = await response.json();
+        const parsed = parseAdvisoryPayload(json);
+        const body = parsed ? renderAdvisoryText(parsed) : json?.advice ?? json?.advisory ?? (t("no_forecast") ?? "No forecast advisory generated");
+        setAdvice(body);
+        setRichAdvice(parsed);
+        await addForecastAdvisory(user.uid, {
+          forecastDate: new Date(day.dt * 1000).toISOString(),
+          advice: body,
+          header: parsed?.header ?? "Forecast farm advice",
+          details: parsed?.items ?? [],
+          forecastWeather: day as unknown as Record<string, unknown>,
+          crops: farm.crops ?? [],
+        });
+      } finally {
+        setLoadingAdvice(false);
+      }
+    },
+    [farm, lang, t, user]
+  );
 
-  async function loadForecast() {
-    const coords = await resolveCoords();
-    if (!coords) {
-      setForecastError(t("no_coords") ?? "Location coordinates not available");
-      setForecast([]);
-      return;
-    }
-
+  const loadForecast = useCallback(async () => {
+    if (!coords) return;
     setLoadingForecast(true);
-    setForecastError(null);
+    setError(null);
     try {
-      const res = await fetch("/api/weather", {
+      const response = await fetch("/api/weather", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat: coords.lat, lon: coords.lon, days: forecastDays }),
+        body: JSON.stringify({ lat: coords.lat, lon: coords.lon, days }),
       });
-      const json = await res.json();
-      if (!res.ok) {
-        setForecast([]);
-        setSelected(null);
-        setAdvice("");
-        setForecastError(json?.error || t("no_forecast") || "No forecast data available");
-        return;
-      }
-
+      const json = await response.json();
       const nextForecast = Array.isArray(json.daily) ? json.daily : Array.isArray(json) ? json : [];
       setForecast(nextForecast);
-      setSelected(null);
-      setAdvice("");
       if (!nextForecast.length) {
-        setForecastError(t("no_forecast") ?? "No forecast data available");
+        setSelected(null);
+        setAdvice("");
+        setRichAdvice(null);
+        setError(t("no_forecast") ?? "No forecast data available");
+        return;
       }
+      const first = nextForecast[0];
+      setSelected(first);
+      await generateForecastAdvice(first);
     } catch (err) {
+      setError(String(err));
       setForecast([]);
       setSelected(null);
       setAdvice("");
-      setForecastError(String(err));
+      setRichAdvice(null);
     } finally {
       setLoadingForecast(false);
     }
-  }
-
-  async function generateAdvice(day: ForecastDay) {
-    if (!user || !farm) return;
-    setLoadingAdvice(true);
-    try {
-      const res = await fetch("/api/advice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          crops: farm.crops ?? [],
-          weather: day,
-          lang: lang ?? "en",
-          cropStages: (farm.crops ?? []).reduce((acc, crop) => {
-            acc[crop] = { stage: farm.cropStatus?.[crop]?.stage ?? "unknown" };
-            return acc;
-          }, {} as Record<string, { stage?: string }>),
-          forecastDate: new Date(day.dt * 1000).toISOString(),
-          state: farm.state ?? null,
-          lga: farm.lga ?? null,
-          soilSummary: null,
-          soil: null,
-        }),
-      });
-      const json = await res.json();
-      const adviceText = json?.advice ?? json?.advisory ?? json?.header ?? t("no_forecast") ?? "No forecast advice available";
-      setAdvice(adviceText);
-      if (user) {
-        await addForecastAdvisory(user.uid, {
-          forecastDate: new Date(day.dt * 1000).toISOString(),
-          advice: adviceText,
-          forecastWeather: day,
-          crops: farm.crops ?? [],
-        });
-      }
-    } catch (err) {
-      setAdvice(String(err));
-    } finally {
-      setLoadingAdvice(false);
-    }
-  }
+  }, [coords, days, generateForecastAdvice, t]);
 
   useEffect(() => {
-    if ((farm?.lat || farm?.state) && forecast.length === 0 && !loadingForecast) {
-      loadForecast().catch(() => setLoadingForecast(false));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [farm?.lat, farm?.lon, farm?.state, farm?.lga]);
+    if (!coords) return;
+    loadForecast().catch((error) => console.error("Failed to load forecast", error));
+  }, [coords, loadForecast]);
 
-  const forecastItems = useMemo(() => forecast.slice(0, 8), [forecast]);
-
-  if (loading || pageLoading) return <Loader />;
+  if (!coords) {
+    return <div className="farm-card border-dashed p-10 text-center text-[#617067]">Add your farm location in Settings before checking the weather plan.</div>;
+  }
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-sky-50 p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-emerald-700">{t("forecast_advisory_tab")}</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900">{t("select_forecast_prompt")}</h1>
-          </div>
-          <button
-            onClick={loadForecast}
-            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-950/10"
-          >
-            {t("get_forecast") ?? "Get forecast"}
-          </button>
+      <section className="overflow-hidden rounded-[1.25rem] border border-[#dce3d9] bg-[#183b29] shadow-sm">
+        <div className="p-6 text-white md:p-8">
+          <p className="text-sm uppercase tracking-[0.22em] text-emerald-200">{t("forecast_advisory_tab") ?? "Weather plan"}</p>
+          <h2 className="mt-2 text-3xl font-semibold">{t("plan_forecast") ?? "Plan around the forecast"}</h2>
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={String(forecastDays)}
-              onChange={(e) => setForecastDays(Number(e.target.value))}
-              className="rounded-full border border-slate-200 px-4 py-2 text-sm"
-            >
+      <section className="space-y-6">
+        <div className="farm-card p-5 md:p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">{t("forecast_windows") ?? "Forecast windows"}</h3>
+              <p className="mt-1 text-sm text-slate-600">{t("forecast_windows_desc") ?? "Choose the horizon you want to plan against, then select the exact day to model."}</p>
+            </div>
+            <select value={days} onChange={(event) => setDays(Number(event.target.value))} className="rounded-lg border border-[#dce3d9] bg-white px-3 py-2 text-sm">
               <option value={3}>3 days</option>
               <option value={5}>5 days</option>
               <option value={7}>7 days</option>
               <option value={8}>8 days</option>
             </select>
-            <button
-              onClick={loadForecast}
-              disabled={loadingForecast}
-              className="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-            >
-              {loadingForecast ? (t("loading_forecast") ?? "Loading forecast...") : (t("get_forecast") ?? "Get forecast")}
-            </button>
           </div>
 
-          {forecastError ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {forecastError}
+          {loadingForecast ? (
+            <div className="py-8">
+              <Loader />
             </div>
           ) : null}
 
-          <div className="space-y-2">
-            {forecastItems.length === 0 ? (
-              <p className="text-sm text-slate-600">{t("select_forecast_prompt")}</p>
-            ) : forecastItems.map((day) => (
+          {error ? <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+
+          <div className="mt-5 grid gap-3">
+            {forecast.map((day) => (
               <button
                 key={day.dt}
-                type="button"
-                onClick={() => {
+                onClick={async () => {
                   setSelected(day);
-                  setAdvice("");
-                  generateAdvice(day).catch(() => setLoadingAdvice(false));
+                  await generateForecastAdvice(day);
                 }}
-                className={`w-full rounded-2xl border px-4 py-3 text-left transition ${selected?.dt === day.dt ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40"}`}
+                className={`rounded-xl border p-4 text-left transition ${
+                  selected?.dt === day.dt ? "border-[#6b8b50] bg-[#edf2e8] shadow-sm" : "border-[#dce3d9] bg-white hover:border-[#aac1ad] hover:shadow-sm"
+                }`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-slate-900">{new Date(day.dt * 1000).toLocaleDateString()}</div>
-                  <div className="text-sm text-slate-600">{day.weather?.[0]?.description ?? "-"}</div>
-                </div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {day.temp?.min ?? day.temp?.night ?? "-"}° / {day.temp?.max ?? day.temp?.day ?? "-"}°C
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{formatDay(day)}</div>
+                    <div className="mt-1 text-sm capitalize text-slate-600">{day.weather?.[0]?.description ?? (t("no_condition") ?? "No condition")}</div>
+                  </div>
+                  <div className="text-right text-sm text-slate-700">
+                    <div>
+                      {day.temp?.min ?? "-"}° / {day.temp?.max ?? "-"}°
+                    </div>
+                    <div>{day.humidity ?? "-"}% {t("humidity") ?? "humidity"}</div>
+                  </div>
                 </div>
               </button>
             ))}
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-semibold text-slate-900">{t("forecast_advisory")}</h2>
-          {loadingAdvice ? (
-            <div className="py-8"><Loader /></div>
-          ) : advice ? (
-            <div className="mt-4 whitespace-pre-line rounded-2xl bg-slate-50 p-4 text-sm leading-7 text-slate-700">
-              {advice}
+        <div className="farm-card p-5 md:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">{t("forecast_advisory") ?? "Forecast advisory"}</h3>
+              <p className="text-sm text-slate-600">{selected ? formatDay(selected) : (t("select_forecast_prompt") ?? "Select a forecast day")}</p>
             </div>
-          ) : (
-            <p className="mt-4 text-sm text-slate-600">
-              {selected ? (t("select_forecast_first") ?? "Please select a forecast date first") : (t("select_forecast_prompt") ?? "Select a forecast date to see crop recommendations")}
-            </p>
-          )}
+            <button
+              onClick={() => selected && generateForecastAdvice(selected)}
+              disabled={!selected || loadingAdvice}
+              className="action-primary disabled:opacity-60"
+            >
+              {loadingAdvice ? (t("generating_advice") ?? "Generating recommendations...") : (t("generate") ?? "Generate")}
+            </button>
+          </div>
+          <div className="mt-5">
+            {richAdvice ? (
+              <AdvisoryRichContent advisory={richAdvice} />
+            ) : (
+              <div className="rounded-[1.5rem] border border-dashed border-emerald-200 bg-emerald-50/40 p-5 whitespace-pre-line text-sm leading-7 text-slate-700">
+                {advice || (t("select_forecast_prompt") ?? "Select a forecast window and generate a crop-aware advisory.")}
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </div>

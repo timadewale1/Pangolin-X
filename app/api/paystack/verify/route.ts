@@ -111,12 +111,20 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   try {
+    if (!db || !adminAuth) {
+      return createResponse(
+        { success: false, message: 'Firebase admin is not configured' },
+        503,
+        null
+      );
+    }
+
     // Log incoming request metadata for debugging
     const headersList = await headers();
     const origin = headersList.get('origin');
     console.log('[paystack/verify] POST request - Origin:', origin, 'Headers:', Object.fromEntries(headersList.entries()));
 
-    if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    if (origin && !ALLOWED_ORIGINS.includes(origin)) {
       console.warn('[paystack/verify] Origin not allowed:', origin);
       return createResponse(
         { success: false, message: 'Origin not allowed' },

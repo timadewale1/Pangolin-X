@@ -1,16 +1,16 @@
 import admin from "firebase-admin";
 
-if (!admin.apps.length) {
+function initializeFirebaseAdmin() {
+  if (admin.apps.length) return true;
+
   try {
     const serviceAccountKey = process.env.SERVICE_ACCOUNT_KEY;
-
     if (!serviceAccountKey) {
-      throw new Error("Missing SERVICE_ACCOUNT_KEY environment variable");
+      console.warn("[firebase-admin] SERVICE_ACCOUNT_KEY not configured");
+      return false;
     }
 
     const serviceAccount = JSON.parse(serviceAccountKey);
-
-    // ✅ Convert escaped newlines to actual newlines
     if (serviceAccount.private_key) {
       serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
     }
@@ -19,13 +19,16 @@ if (!admin.apps.length) {
       credential: admin.credential.cert(serviceAccount),
     });
 
-    console.log("[firebase-admin] ✅ Initialized successfully");
+    console.log("[firebase-admin] Initialized successfully");
+    return true;
   } catch (error) {
-    console.error("🔥 Failed to init firebase-admin:", error);
+    console.error("[firebase-admin] Failed to initialize", error);
+    return false;
   }
 }
 
-// Export for usage in any server route
-export const adminDB = admin.firestore();
-export const adminAuth = admin.auth();
+const adminReady = initializeFirebaseAdmin();
+
+export const adminDB = adminReady ? admin.firestore() : null;
+export const adminAuth = adminReady ? admin.auth() : null;
 export { admin };

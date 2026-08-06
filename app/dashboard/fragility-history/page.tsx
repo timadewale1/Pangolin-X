@@ -1,3 +1,6 @@
 import FragilityHistoryPage from "@/components/dashboard/pages/FragilityHistoryPage";
 
-export default FragilityHistoryPage;
+/** Paginated archive of deliberately saved farm-risk assessments. */
+export default function FragilityHistoryRoute() {
+  return <FragilityHistoryPage />;
+}

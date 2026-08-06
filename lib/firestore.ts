@@ -10,6 +10,7 @@ import {
   orderBy,
   limit,
   startAfter,
+  where,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -42,6 +43,8 @@ export interface AdvisoryData extends BaseAdvisoryData {
   // forgiving during migration.
   advice?: string;
   advisory?: string;
+  header?: string;
+  details?: unknown;
 }
 
 // Forecast advisory with future date and recommendations
@@ -51,6 +54,8 @@ export interface ForecastAdvisoryData extends BaseAdvisoryData {
   
   // The advisory text for the forecast date
   advice: string;
+  header?: string;
+  details?: unknown;
   
   // Original forecast weather data that was used
   forecastWeather: Record<string, unknown>;
@@ -83,11 +88,11 @@ export async function addForecastAdvisory(uid: string, data: ForecastAdvisoryDat
   await addDoc(ref, { ...data, createdAt: serverTimestamp() });
 }
 
-export async function fetchAdvisories(uid: string, count: number = 10) {
+export async function fetchAdvisories(uid: string, count: number = 10): Promise<Array<AdvisoryData & { id: string }>> {
   const ref = collection(db, "farmers", uid, "advisories");
   const q = query(ref, orderBy("createdAt", "desc"), limit(count));
   const snap = await getDocs(q);
-  return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as AdvisoryData) }));
 }
 
 export async function fetchAdvisoriesPage(uid: string, count: number = 10, after?: unknown) {
@@ -104,21 +109,13 @@ export async function fetchForecastAdvisories(uid: string, fromDate: Date, toDat
   const ref = collection(db, "farmers", uid, "forecastAdvisories");
   const q = query(
     ref,
-    // Filter to forecasts within the date range
     orderBy("forecastDate"),
-    // Use .where() after orderBy() for range queries
-    // Convert dates to ISO strings for comparison
+    where("forecastDate", ">=", fromDate.toISOString()),
+    where("forecastDate", "<=", toDate.toISOString()),
     limit(count)
   );
   const snap = await getDocs(q);
-  
-  // Filter client-side since Firestore doesn't support string range comparisons well
-  return snap.docs
-    .map((doc) => ({ id: doc.id, ...doc.data() as ForecastAdvisoryData }))
-    .filter((doc) => {
-      const forecastDate = new Date(doc.forecastDate);
-      return forecastDate >= fromDate && forecastDate <= toDate;
-    });
+  return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() as ForecastAdvisoryData }));
 }
 
 // Fetch fragility advisory history

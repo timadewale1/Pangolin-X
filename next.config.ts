@@ -1,5 +1,7 @@
-/** next.config.js */
-module.exports = {
+import path from "path";
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
@@ -22,4 +24,7 @@ module.exports = {
       },
     ],
   },
+  outputFileTracingRoot: path.resolve(__dirname),
 };
+
+export default nextConfig;

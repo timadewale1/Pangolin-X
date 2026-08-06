@@ -2,7 +2,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
 type Lang = "en" | "ha" | "ig" | "yo" | "pg";
-type Translations = Record<string, string>;
 
 const translations: Record<Lang, Record<string, string>> = {
   en: {

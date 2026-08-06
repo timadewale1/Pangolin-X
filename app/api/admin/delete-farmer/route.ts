@@ -5,6 +5,10 @@ const db = adminDB;
 
 export async function POST(req: Request) {
   try {
+    if (!db || !adminAuth) {
+      return NextResponse.json({ success: false, message: 'Firebase admin is not configured' }, { status: 503 });
+    }
+
     // protect endpoint with a shared secret header
     const secret = process.env.ADMIN_SECRET;
     const provided = req.headers.get('x-admin-secret');

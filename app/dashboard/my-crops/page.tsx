@@ -1,3 +1,3 @@
-import MyCropsPage from "@/components/dashboard/pages/MyCropsPage";
+import CropsPage from "../crops/page";
 
-export default MyCropsPage;
+export default CropsPage;

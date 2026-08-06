@@ -2,6 +2,8 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useLang } from "@/hooks/useLang";
+import AdvisoryRichContent from "@/components/advisory/AdvisoryRichContent";
+import type { AdvisoryResponse } from "@/lib/dashboard-types";
 
 interface AdvisoryDetailModalProps {
   open: boolean;
@@ -9,6 +11,8 @@ interface AdvisoryDetailModalProps {
   advisory: {
     advice: string;
     crops: string[];
+    header?: string;
+    details?: AdvisoryResponse["items"];
     createdAt: Date | string;
   } | null;
 }
@@ -16,22 +20,29 @@ interface AdvisoryDetailModalProps {
 export default function AdvisoryDetailModal({ open, onClose, advisory }: AdvisoryDetailModalProps) {
   const { t } = useLang();
   if (!advisory) return null;
+  const richAdvisory = advisory.details?.length
+    ? {
+        header: advisory.header ?? (t("advisory_details") || "Advisory Details"),
+        items: advisory.details,
+      }
+    : null;
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md p-6 bg-white rounded-2xl shadow-lg border border-green-200 max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto rounded-3xl border border-green-200 bg-white p-6 shadow-lg">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold text-green-700 text-center">
             {t("advisory_details") || "Advisory Details"}
           </DialogTitle>
         </DialogHeader>
-        {/* <div className="mt-2 text-center text-gray-600 text-sm">
-          {typeof advisory.createdAt === "string"
-            ? new Date(advisory.createdAt).toLocaleString()
-            : advisory.createdAt && advisory.createdAt.toLocaleString ? advisory.createdAt.toLocaleString() : ""}
-        </div> */}
-        <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 text-gray-800 whitespace-pre-line">
-          {advisory.advice || t("no_advice") || "No advice available"}
-        </div>
+        {richAdvisory ? (
+          <div className="mt-4">
+            <AdvisoryRichContent advisory={richAdvisory} />
+          </div>
+        ) : (
+          <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 text-gray-800 whitespace-pre-line">
+            {advisory.advice || t("no_advice") || "No advice available"}
+          </div>
+        )}
         <div className="mt-4 text-sm text-gray-700">
           <strong>{t("crops_label") || "Crops"}:</strong> {advisory.crops.join(", ")}
         </div>

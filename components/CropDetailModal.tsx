@@ -28,7 +28,7 @@ interface CropDetailModalProps {
 
 export default function CropDetailModal({ open, crop, weather, onClose, lang, onOpenStageModal }: CropDetailModalProps) {
   const { t } = useLang();
-  const [advice, setAdvice] = useState<string>("");
+  const [, setAdvice] = useState<string>("");
 
   useEffect(() => {
     if (!open || !crop || !weather) return;

@@ -6,6 +6,10 @@ const VALID_CODE = "PANGOLIN-X";
 
 export async function POST(req: Request) {
   try {
+    if (!db) {
+      return NextResponse.json({ success: false, message: "Firebase admin is not configured" }, { status: 503 });
+    }
+
     // Require an admin secret header to protect this endpoint
     const secret = process.env.ADMIN_SECRET;
     const provided = req.headers.get('x-admin-secret');

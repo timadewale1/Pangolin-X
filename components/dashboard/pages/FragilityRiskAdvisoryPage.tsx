@@ -53,7 +53,11 @@ export default function FragilityRiskAdvisoryPage() {
     const json = await res.json();
     setReport(json);
     if (user) {
-      await addFragilityAdvisory(user.uid, { header: json.header ?? "Fragility advisory", sections: Array.isArray(json.sections) ? json.sections : [], weather: null });
+      await addFragilityAdvisory(user.uid, {
+        header: json.header ?? "Fragility advisory",
+        sections: Array.isArray(json.sections) ? json.sections : [],
+        weather: null,
+      });
     }
     setPageLoading(false);
   }
@@ -63,9 +67,21 @@ export default function FragilityRiskAdvisoryPage() {
   }, [user, lang]);
 
   const sections = useMemo(() => report?.sections ?? [], [report]);
-  const overallScore = report?.overallScore ?? Math.round((sections.reduce((sum, section) => sum + severityValue(section.severity), 0) / Math.max(sections.length, 1)) || 0);
+  const overallScore =
+    report?.overallScore ??
+    Math.round((sections.reduce((sum, section) => sum + severityValue(section.severity), 0) / Math.max(sections.length, 1)) || 0);
   const confidence = report?.confidence ?? (sections.length ? Math.min(95, 60 + sections.length * 8) : 0);
-  const channels = Array.isArray(report?.recommendedChannels) ? report?.recommendedChannels : typeof report?.recommendedChannels === "string" ? [report.recommendedChannels] : [];
+  const channels = Array.isArray(report?.recommendedChannels)
+    ? report?.recommendedChannels
+    : typeof report?.recommendedChannels === "string"
+      ? [report.recommendedChannels]
+      : [];
+
+  const severityLabel = (severity?: string) => {
+    if (severity === "high") return t("high_severity") ?? "High";
+    if (severity === "moderate") return t("moderate_severity") ?? "Moderate";
+    return t("low_severity") ?? "Low";
+  };
 
   if (loading || pageLoading) return <Loader />;
 
@@ -75,43 +91,60 @@ export default function FragilityRiskAdvisoryPage() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm uppercase tracking-[0.2em] text-emerald-700">{t("fragility_tab")}</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900">{farm?.lga ? `${farm.lga}, ${farm.state}` : (t("location_fragility") ?? "Location-based fragility advisory")}</h1>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900">
+              {farm?.lga ? `${farm.lga}, ${farm.state}` : t("location_fragility") ?? "Location-based fragility advisory"}
+            </h1>
           </div>
-          <button onClick={() => refresh()} className="rounded-full border border-slate-200 px-4 py-2 text-sm">{t("refresh")}</button>
+          <button onClick={() => refresh()} className="rounded-full border border-slate-200 px-4 py-2 text-sm">
+            {t("refresh")}
+          </button>
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-sm text-slate-500">{t("overall_score") ?? "Overall score"}</div>
-          <div className="mt-2 text-4xl font-semibold text-slate-900">{overallScore || "—"}</div>
+          <div className="mt-2 text-4xl font-semibold text-slate-900">{overallScore || "-"}</div>
         </div>
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-sm text-slate-500">{t("confidence") ?? "Confidence"}</div>
-          <div className="mt-2 text-4xl font-semibold text-slate-900">{confidence || "—"}</div>
+          <div className="mt-2 text-4xl font-semibold text-slate-900">{confidence || "-"}</div>
         </div>
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-sm text-slate-500">{t("channels") ?? "Channels"}</div>
-          <div className="mt-2 text-lg font-medium text-slate-900">{channels.length ? channels.join(", ") : "—"}</div>
+          <div className="mt-2 text-lg font-medium text-slate-900">{channels.length ? channels.join(", ") : "-"}</div>
         </div>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6">
-        <h2 className="text-lg font-semibold text-slate-900">{report?.header ?? (t("analysis") ?? "Analysis")}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-900">{report?.header ?? (t("analysis") ?? "Analysis")}</h2>
+          <p className="text-sm text-slate-500">{t("source_traceability")}</p>
+        </div>
         <div className="mt-4 grid gap-4">
           {sections.length === 0 ? (
             <p className="text-sm text-slate-600">{t("no_fragility_advisory") ?? "No fragility advisory available. Click refresh to fetch."}</p>
-          ) : sections.map((section, index) => (
-            <article key={index} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-medium text-slate-900">{normalizedSectionTitle(section.title, t)}</h3>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${section.severity === "high" ? "bg-rose-100 text-rose-700" : section.severity === "moderate" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-                  {section.severity ?? "low"}
-                </span>
-              </div>
-              <p className="mt-2 text-sm leading-7 text-slate-700">{section.summary}</p>
-            </article>
-          ))}
+          ) : (
+            sections.map((section, index) => (
+              <article key={index} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-medium text-slate-900">{normalizedSectionTitle(section.title, t)}</h3>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
+                      section.severity === "high"
+                        ? "bg-rose-100 text-rose-700"
+                        : section.severity === "moderate"
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-emerald-100 text-emerald-700"
+                    }`}
+                  >
+                    {severityLabel(section.severity)}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-7 text-slate-700">{section.summary}</p>
+              </article>
+            ))
+          )}
         </div>
       </section>
     </div>

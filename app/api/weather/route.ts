@@ -1,114 +1,78 @@
+// app/api/weather/route.ts
 import { NextResponse } from "next/server";
 
-type OpenMeteoCurrent = {
-  temperature_2m?: number;
-  apparent_temperature?: number;
-  relative_humidity_2m?: number;
-  weather_code?: number;
-  wind_speed_10m?: number;
-  surface_pressure?: number;
-  pressure_msl?: number;
-};
+const WEATHER_TTL_MS = 15 * 60 * 1000;
+const weatherCache = new Map<string, { expiresAt: number; payload: unknown }>();
 
-type OpenMeteoDaily = {
-  time?: string[];
-  weather_code?: number[];
-  temperature_2m_max?: number[];
-  temperature_2m_min?: number[];
-  precipitation_sum?: number[];
-  wind_speed_10m_max?: number[];
-};
-
-function weatherDescription(code?: number) {
-  switch (code) {
-    case 0:
-      return "clear sky";
-    case 1:
-      return "mainly clear";
-    case 2:
-      return "partly cloudy";
-    case 3:
-      return "overcast";
-    case 45:
-    case 48:
-      return "fog";
-    case 51:
-    case 53:
-    case 55:
-      return "drizzle";
-    case 56:
-    case 57:
-      return "freezing drizzle";
-    case 61:
-    case 63:
-    case 65:
-      return "rain";
-    case 66:
-    case 67:
-      return "freezing rain";
-    case 71:
-    case 73:
-    case 75:
-      return "snow";
-    case 77:
-      return "snow grains";
-    case 80:
-    case 81:
-    case 82:
-      return "showers";
-    case 85:
-    case 86:
-      return "snow showers";
-    case 95:
-      return "thunderstorm";
-    case 96:
-    case 99:
-      return "thunderstorm with hail";
-    default:
-      return "partly cloudy";
-  }
+async function fetchWithTimeout(url: string) {
+  return fetch(url, { signal: AbortSignal.timeout(9_000), next: { revalidate: 900 } });
 }
 
-function weatherMain(code?: number) {
-  switch (code) {
-    case 0:
-    case 1:
-      return "Clear";
-    case 2:
-    case 3:
-      return "Clouds";
-    case 45:
-    case 48:
-      return "Fog";
-    case 51:
-    case 53:
-    case 55:
-    case 56:
-    case 57:
-      return "Drizzle";
-    case 61:
-    case 63:
-    case 65:
-    case 66:
-    case 67:
-    case 80:
-    case 81:
-    case 82:
-      return "Rain";
-    case 71:
-    case 73:
-    case 75:
-    case 77:
-    case 85:
-    case 86:
-      return "Snow";
-    case 95:
-    case 96:
-    case 99:
-      return "Thunderstorm";
-    default:
-      return "Clouds";
-  }
+function describeWeatherCode(code: number | null | undefined) {
+  if (code === 0) return "Clear sky";
+  if ([1, 2].includes(Number(code))) return "Partly cloudy";
+  if (code === 3) return "Overcast";
+  if ([45, 48].includes(Number(code))) return "Fog";
+  if ([51, 53, 55].includes(Number(code))) return "Drizzle";
+  if ([61, 63, 65].includes(Number(code))) return "Rain";
+  if ([71, 73, 75, 77].includes(Number(code))) return "Snow";
+  if ([80, 81, 82].includes(Number(code))) return "Showers";
+  if ([95, 96, 99].includes(Number(code))) return "Thunderstorm";
+  return "Unknown";
+}
+
+async function fetchOpenMeteoFallback(lat: number, lon: number, days: number) {
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.searchParams.set("latitude", String(lat));
+  url.searchParams.set("longitude", String(lon));
+  url.searchParams.set("timezone", "auto");
+  url.searchParams.set("current", "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,pressure_msl,wind_speed_10m");
+  url.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max");
+  url.searchParams.set("forecast_days", String(Math.max(1, Math.min(days, 10))));
+
+  const response = await fetchWithTimeout(url.toString());
+  if (!response.ok) return null;
+  const data = await response.json();
+  const daily = Array.isArray(data?.daily?.time)
+    ? data.daily.time.slice(0, days).map((time: string, index: number) => ({
+        dt: Math.floor(new Date(time).getTime() / 1000),
+        temp: {
+          min: data.daily.temperature_2m_min?.[index],
+          max: data.daily.temperature_2m_max?.[index],
+          day: data.daily.temperature_2m_max?.[index],
+          night: data.daily.temperature_2m_min?.[index],
+        },
+        weather: [
+          {
+            description: describeWeatherCode(data.daily.weather_code?.[index]),
+            id: data.daily.weather_code?.[index],
+          },
+        ],
+        humidity: data.current?.relative_humidity_2m ?? null,
+        pressure: data.current?.pressure_msl ?? null,
+        wind_speed: data.current?.wind_speed_10m ?? null,
+      }))
+    : [];
+
+  return {
+    timezone: data.timezone ?? null,
+    lat,
+    lon,
+    current: {
+      temp: data.current?.temperature_2m ?? null,
+      feels_like: data.current?.apparent_temperature ?? null,
+      humidity: data.current?.relative_humidity_2m ?? null,
+      pressure: data.current?.pressure_msl ?? null,
+      weather: [
+        {
+          description: describeWeatherCode(data.current?.weather_code),
+          id: data.current?.weather_code,
+        },
+      ],
+      wind_speed: data.current?.wind_speed_10m ?? null,
+    },
+    daily,
+  };
 }
 
 export async function POST(req: Request) {
@@ -116,95 +80,97 @@ export async function POST(req: Request) {
     const body = await req.json();
     const lat = Number(body.lat);
     const lon = Number(body.lon);
-    const requestedDays = Number(body.days || 1);
-    const forecastDays = Math.max(1, Math.min(16, Number.isFinite(requestedDays) ? requestedDays : 1));
+    const days = Number(body.days || 1);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return NextResponse.json({ error: "Enter a valid farm location before checking the weather." }, { status: 400 });
+    const cacheKey = `${lat.toFixed(3)}:${lon.toFixed(3)}:${Math.max(1, Math.min(days, 10))}`;
+    const cached = weatherCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return NextResponse.json(cached.payload, { headers: { "X-Pangolin-Cache": "HIT" } });
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      return NextResponse.json({ error: "Missing coordinates" }, { status: 400 });
+    const respond = (payload: unknown) => {
+      weatherCache.set(cacheKey, { expiresAt: Date.now() + WEATHER_TTL_MS, payload });
+      return NextResponse.json(payload, { headers: { "X-Pangolin-Cache": "MISS" } });
+    };
+
+    const key = process.env.OPENWEATHERMAP_API_KEY;
+    if (!key) {
+      const meteo = await fetchOpenMeteoFallback(lat, lon, days);
+      return meteo ? respond(meteo) : NextResponse.json({ error: "Weather is temporarily unavailable. Please try again shortly." }, { status: 503 });
     }
 
-    const params = new URLSearchParams({
-      latitude: String(lat),
-      longitude: String(lon),
-      timezone: "auto",
-      forecast_days: String(forecastDays),
-      current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,surface_pressure",
-      daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max",
-    });
+    // If caller requests more than 1 day, use One Call endpoint and return daily forecasts.
+    // One Call provides up to 7-8 day daily forecasts for free accounts; cap at 8 days here.
+    const maxDays = 8;
+    if (days && days > 1) {
+      if (days > maxDays) {
+        return NextResponse.json({ error: `Forecast unavailable for more than ${maxDays} days via this API` }, { status: 400 });
+      }
+      const oneCallUrl = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lon}&units=metric&exclude=minutely,hourly,alerts&appid=${key}`;
+      const oneCallResponse = await fetchWithTimeout(oneCallUrl);
+      if (oneCallResponse.ok) {
+        const data = await oneCallResponse.json();
+        const daily = Array.isArray(data.daily) ? data.daily.slice(0, days) : [];
+        return respond({ timezone: data.timezone, lat: data.lat ?? lat, lon: data.lon ?? lon, current: data.current ?? null, daily });
+      }
 
-    const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
-    const data = await res.json();
+      // Fallback to the 5 day / 3 hour endpoint so forecast still works if OneCall is unavailable.
+      const fallbackUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=metric&appid=${key}`;
+      const fallbackResponse = await fetchWithTimeout(fallbackUrl);
+      const fallbackJson = await fallbackResponse.json();
+      if (!fallbackResponse.ok) {
+        const meteo = await fetchOpenMeteoFallback(lat, lon, days);
+        if (meteo) return respond(meteo);
+        return NextResponse.json({ error: "Weather forecast is temporarily unavailable. Please try again shortly." }, { status: 503 });
+      }
 
-    if (!res.ok) {
-      return NextResponse.json({ error: data?.reason || data?.error || "Weather fetch failed" }, { status: res.status });
-    }
+      const grouped = new Map<string, { bucket: number[]; items: Array<Record<string, unknown>> }>();
+      (fallbackJson.list ?? []).forEach((item: Record<string, unknown>) => {
+        const dt = Number(item.dt ?? 0);
+        const date = new Date(dt * 1000).toISOString().split("T")[0];
+        const current = grouped.get(date) ?? { bucket: [], items: [] };
+        current.bucket.push(Number((item.main as { temp?: number })?.temp ?? 0));
+        current.items.push(item);
+        grouped.set(date, current);
+      });
 
-    const current: OpenMeteoCurrent | null = data?.current ?? null;
-    const daily: OpenMeteoDaily | null = data?.daily ?? null;
-
-    const currentWeatherCode = current?.weather_code;
-    const currentPayload = current
-      ? {
-          temp: current.temperature_2m ?? null,
-          feels_like: current.apparent_temperature ?? current.temperature_2m ?? null,
-          humidity: current.relative_humidity_2m ?? null,
-          pressure: current.surface_pressure ?? current.pressure_msl ?? null,
-          weather: [
-            {
-              description: weatherDescription(currentWeatherCode),
-              main: weatherMain(currentWeatherCode),
-              id: currentWeatherCode ?? undefined,
+      const daily = Array.from(grouped.entries())
+        .slice(0, days)
+        .map(([, entry]) => {
+          const first = entry.items[0] as {
+            dt?: number;
+            weather?: Array<{ description?: string; main?: string; icon?: string; id?: number }>;
+            wind?: { speed?: number };
+            main?: { humidity?: number; pressure?: number };
+          };
+          return {
+            dt: first.dt,
+            temp: {
+              min: Math.min(...entry.bucket),
+              max: Math.max(...entry.bucket),
+              day: entry.bucket[Math.floor(entry.bucket.length / 2)] ?? entry.bucket[0],
+              night: entry.bucket[entry.bucket.length - 1] ?? entry.bucket[0],
             },
-          ],
-          wind_speed: current.wind_speed_10m ?? null,
-        }
-      : null;
+            weather: first.weather ?? [],
+            humidity: first.main?.humidity,
+            pressure: first.main?.pressure,
+            wind_speed: first.wind?.speed,
+          };
+        });
 
-    const dailyTimes = Array.isArray(daily?.time) ? daily.time : [];
-    const dailyForecast = dailyTimes.slice(0, forecastDays).map((time, index) => {
-      const code = Array.isArray(daily?.weather_code) ? daily.weather_code[index] : undefined;
-      return {
-        dt: Math.floor(new Date(time).getTime() / 1000),
-        temp: {
-          min: Array.isArray(daily?.temperature_2m_min) ? daily.temperature_2m_min[index] : null,
-          max: Array.isArray(daily?.temperature_2m_max) ? daily.temperature_2m_max[index] : null,
-          day: Array.isArray(daily?.temperature_2m_max) ? daily.temperature_2m_max[index] : null,
-          night: Array.isArray(daily?.temperature_2m_min) ? daily.temperature_2m_min[index] : null,
-        },
-        weather: [
-          {
-            description: weatherDescription(code),
-            main: weatherMain(code),
-            id: code,
-          },
-        ],
-        humidity: null,
-        pressure: null,
-        wind_speed: Array.isArray(daily?.wind_speed_10m_max) ? daily.wind_speed_10m_max[index] : null,
-        precipitation_sum: Array.isArray(daily?.precipitation_sum) ? daily.precipitation_sum[index] : null,
-      };
-    });
+      return respond({ timezone: fallbackJson.city?.timezone ?? null, lat, lon, current: null, daily });
+    }
 
-    return NextResponse.json({
-      provider: "open-meteo",
-      timezone: data?.timezone ?? "auto",
-      lat,
-      lon,
-      current: currentPayload,
-      main: currentPayload
-        ? {
-            temp: currentPayload.temp,
-            feels_like: currentPayload.feels_like,
-            humidity: currentPayload.humidity,
-            pressure: currentPayload.pressure,
-          }
-        : null,
-      weather: currentPayload?.weather ?? [],
-      wind: currentPayload?.wind_speed !== null ? { speed: currentPayload?.wind_speed } : null,
-      daily: dailyForecast,
-    });
+    // default: return current weather (compatibility with existing callers)
+    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${key}`;
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) {
+      const meteo = await fetchOpenMeteoFallback(lat, lon, 1);
+      if (meteo) return respond(meteo);
+      return NextResponse.json({ error: "Weather is temporarily unavailable. Please try again shortly." }, { status: 503 });
+    }
+    const data = await res.json();
+    return respond(data);
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "Weather fetch failed" }, { status: 500 });
+    return NextResponse.json({ error: "Weather is temporarily unavailable. Please try again shortly." }, { status: 503 });
   }
 }

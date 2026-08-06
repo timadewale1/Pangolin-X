@@ -1,0 +1,21 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // A farmer may only manage their own profile and farm images.
+    match /profilePictures/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /farmers/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId
+        && (request.resource == null || request.resource.size < 8 * 1024 * 1024);
+    }
+
+    // No public writes - allow public read for other static content if you want:
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
