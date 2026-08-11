@@ -4,6 +4,7 @@ import { fetchLocalNews } from "@/lib/news";
 import { adminDB } from "@/lib/firebaseAdmin";
 import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
 import { getLanguageLabel } from "@/lib/language";
+import { takeAdviceRequest } from "@/lib/adviceRateLimit";
 
 export async function POST(req: Request) {
   try {
@@ -11,6 +12,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Farm advice is temporarily unavailable. Please try again shortly." }, { status: 503 });
     }
     const body = await req.json();
+    const rate = takeAdviceRequest(String(body.userId || req.headers.get("x-forwarded-for") || "anonymous"));
+    if (!rate.allowed) return NextResponse.json({ error: `You can request up to three new advisories every 30 minutes. Please try again in about ${Math.ceil(rate.retryAfterSeconds / 60)} minutes.` }, { status: 429 });
     const crops: string[] = body.crops ?? [];
     const weather = body.weather;
     const lang = getLanguageLabel(body.lang);
@@ -123,7 +126,8 @@ Rules:
 - "timing" must say when to act today / this week.
 - "marketIntel" should mention any relevant local supply, movement, pest, flood, conflict, or input-access signal. If nothing strong exists, say so briefly.
 - "sourceTags" should be short labels like Weather, Soil, News, NiMet, NEMA, NIHSA, Local context.
-- "advice" should be a polished compact narrative version of the recommendation.
+- "advice" must be a detailed, practical farmer briefing of 350–550 words for that specific crop. Use short labelled paragraphs or bullets covering: what the current weather means, how the saved soil context affects the decision, exact work to do now, what to inspect in the field, input/water guidance, pest/disease signs to look for, and what to avoid. Do not use generic wording such as "farmers should". Address the farmer directly as "you" and name the crop, crop stage, LGA and state where helpful.
+- The executiveSummary must be 180–260 words and be a detailed plan for this farmer's whole farm, not a restatement of crop items. It must address the farmer directly as "you".
 - Confidence should be an integer between 45 and 95.
 - Do not include markdown or any text outside the JSON.
 
@@ -133,6 +137,7 @@ Context:
 - ${forecastDate ? `Forecast date: ${forecastDate.toLocaleDateString()}` : "Advice type: current conditions"}
 - Weather: ${temp}C, ${cond}
 - Location: ${body.lga}, ${body.state}
+- Previous advice for this farm (use only to continue from completed actions and avoid repeating it): ${String(body.previousAdvice ?? "No previous advice is available.").slice(0, 6000)}
 - Soil information:
 ${soilInfo}
 

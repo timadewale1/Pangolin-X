@@ -5,24 +5,7 @@ import ZoneHeatmap from "@/components/dashboard/ZoneHeatmap";
 import { useDashboard } from "@/context/DashboardContext";
 import { useLanguage } from "@/context/LanguageContext";
 import type { FragilityReport } from "@/lib/dashboard-types";
-import { addFragilityAdvisory } from "@/lib/firestore";
-
-function toCsv(report: FragilityReport) {
-  const lines = [
-    "section,severity,score,trend,summary,sources",
-    ...report.sections.map((section) =>
-      [
-        section.title,
-        section.severity,
-        section.score,
-        section.trend,
-        `"${section.summary.replaceAll('"', '""')}"`,
-        `"${section.sourceRefs.join(" | ")}"`,
-      ].join(",")
-    ),
-  ];
-  return lines.join("\n");
-}
+import { addFragilityAdvisory, fetchFragilityAdvisories } from "@/lib/firestore";
 
 export default function FragilityPage() {
   const { farm, user } = useDashboard();
@@ -40,6 +23,7 @@ export default function FragilityPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: user?.uid,
           lang: farm.language ?? "en",
           lga: farm.lga,
           state: farm.state,
@@ -48,7 +32,7 @@ export default function FragilityPage() {
       const json = await response.json();
       if (!response.ok) throw new Error(json?.error ?? "Risk information is temporarily unavailable.");
       setReport(json);
-      if (saveToHistory && user) await addFragilityAdvisory(user.uid, { header: json.header, sections: json.sections, weather: null });
+      if (saveToHistory && user) await addFragilityAdvisory(user.uid, { header: json.header, sections: json.sections, weather: null, report: json });
     } catch (error) {
       setReport(null);
       console.error("Unable to refresh risk report", error);
@@ -59,8 +43,13 @@ export default function FragilityPage() {
   }, [farm?.lga, farm?.state, farm?.language, user, t]);
 
   useEffect(() => {
-    loadReport().catch((error) => console.error("Failed to load fragility report", error));
-  }, [loadReport]);
+    if (!user) return;
+    fetchFragilityAdvisories(user.uid, 1).then((items) => {
+      const saved = items[0] as { report?: FragilityReport } | undefined;
+      if (saved?.report) setReport(saved.report);
+      else void loadReport(true);
+    }).catch(() => void loadReport(true));
+  }, [loadReport, user]);
 
   const scoreCards = useMemo(() => {
     if (!report) return [];
@@ -76,51 +65,17 @@ export default function FragilityPage() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-[1.25rem] border border-[#dce3d9] bg-[#183b29] shadow-sm">
+      <section className="overflow-hidden rounded-[1.75rem] border border-[#263f31] bg-[#10271a] shadow-[0_18px_50px_rgba(16,39,26,.18)]">
         <div className="p-6 text-white md:flex md:items-center md:justify-between md:p-8">
           <div className="max-w-3xl">
             <p className="text-sm uppercase tracking-[0.22em] text-emerald-200">{t("fragility_intelligence") ?? "Fragility Intelligence"}</p>
-            <h2 className="mt-2 text-3xl font-semibold">{t("structured_scoring") ?? "Structured scoring, source traceability, and export-ready risk views."}</h2>
-            <p className="mt-3 text-sm leading-7 text-emerald-50/90">
-              {t("structured_scoring") ?? "This replaces the older text-only fragility panel with a more institutional-grade layout for operational reviews, partner exports, and location-specific vulnerability checks."}
-            </p>
+            <h2 className="mt-2 text-3xl font-semibold">Your farm resilience report</h2>
+            <p className="mt-3 text-sm leading-7 text-emerald-50/90">A focused view of conditions that may affect your field access, crops, and farm decisions.</p>
           </div>
           <div className="mt-5 flex flex-wrap gap-3 md:mt-0">
             <button onClick={() => void loadReport(true)} disabled={loading} className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#183127] transition hover:bg-[#f1f2eb] disabled:opacity-60">
               {loading ? (t("refreshing") ?? "Refreshing...") : (t("refresh") ?? "Refresh report")}
             </button>
-            {report ? (
-              <>
-                <button
-                  onClick={() => {
-                    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement("a");
-                    link.href = url;
-                    link.download = `fragility-${report.location.lga ?? "report"}.json`;
-                    link.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="rounded-full border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
-                >
-                  Export JSON
-                </button>
-                <button
-                  onClick={() => {
-                    const blob = new Blob([toCsv(report)], { type: "text/csv;charset=utf-8" });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement("a");
-                    link.href = url;
-                    link.download = `fragility-${report.location.lga ?? "report"}.csv`;
-                    link.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="rounded-full border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
-                >
-                  Export CSV
-                </button>
-              </>
-            ) : null}
           </div>
         </div>
       </section>
@@ -128,11 +83,11 @@ export default function FragilityPage() {
 
       {report ? (
         <>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {scoreCards.map((card) => (
-              <div key={card.label} className="farm-card p-5">
-                <div className="text-xs uppercase tracking-[0.22em] text-emerald-600">{card.label}</div>
-                <div className="mt-3 text-3xl font-bold text-slate-900">{card.value}</div>
+              <div key={card.label} className="rounded-2xl border border-[#d8e5d9] bg-white p-5">
+                <div className="text-xs uppercase tracking-[0.18em] text-[#568064]">{card.label}</div>
+                <div className="mt-3 text-3xl font-bold text-[#173c28]">{card.value}</div>
               </div>
             ))}
           </section>
@@ -140,24 +95,20 @@ export default function FragilityPage() {
           <section className="grid gap-6 xl:grid-cols-[1.05fr_1fr]">
             <ZoneHeatmap zones={report.zoneScores} />
             <div className="farm-card p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-emerald-600">{t("source_traceability") ?? "Source Traceability"}</p>
-              <h3 className="mt-2 text-xl font-semibold text-slate-900">{t("evidence_used_current_report") ?? "Evidence used in the current report"}</h3>
+              <p className="text-sm uppercase tracking-[0.22em] text-emerald-600">Evidence</p>
+              <h3 className="mt-2 text-xl font-semibold text-slate-900">Sources behind this report</h3>
               <div className="mt-5 space-y-3">
                 {report.sources.map((source) => (
                   <div key={source.id} className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50/50 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <a href={source.url ?? `https://www.google.com/search?q=${encodeURIComponent(`${source.source} ${source.title}`)}`} target="_blank" rel="noreferrer" className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="text-sm font-semibold text-slate-900">{source.title}</div>
                         <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
                           {source.source} / {source.type}
                         </div>
                       </div>
-                      {source.url ? (
-                        <a href={source.url} target="_blank" rel="noreferrer" className="text-sm font-medium text-emerald-700 underline">
-                          Open source
-                        </a>
-                      ) : null}
-                    </div>
+                      <span className="text-sm font-medium text-emerald-700 underline">Open source</span>
+                    </a>
                   </div>
                 ))}
               </div>

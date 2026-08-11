@@ -192,9 +192,10 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     fetch("/api/soilgrids", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat: farm.lat, lon: farm.lon }) })
       .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Soil lookup unavailable")))
       .then(async (soil) => {
-        const soilSummary = String(soil?.summary ?? soil?.classification?.wrb_class_name ?? soil?.classification?.soil_class_name ?? soil?.classification?.name ?? "");
-        await updateDoc(doc(db, "farmers", user.uid), { soil, soilSummary: soilSummary || null });
-        setFarm((current) => current ? { ...current, soil, soilSummary: soilSummary || current.soilSummary } : current);
+        const soilSummary = String(soil?.summary ?? soil?.classification?.wrb_class_name ?? soil?.classification?.soil_class_name ?? soil?.classification?.name ?? "").trim();
+        const savedSummary = soilSummary || "Location-based soil profile is ready; detailed soil properties are being refined.";
+        await updateDoc(doc(db, "farmers", user.uid), { soil, soilSummary: savedSummary });
+        setFarm((current) => current ? { ...current, soil, soilSummary: savedSummary } : current);
       })
       .catch((error) => console.warn("Soil information could not be loaded", error));
   }, [farm, user]);

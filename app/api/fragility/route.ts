@@ -4,6 +4,7 @@ import { fetchLocalNews } from "@/lib/news";
 import { getNigeriaZone, NIGERIA_ZONE_ORDER } from "@/lib/nigeria-zones";
 import type { FragilityReport, FragilitySource } from "@/lib/dashboard-types";
 import { getLanguageLabel } from "@/lib/language";
+import { takeAdviceRequest } from "@/lib/adviceRateLimit";
 
 function clampScore(input: unknown, fallback: number) {
   const value = Number(input);
@@ -88,6 +89,8 @@ export async function POST(req: Request) {
   let requestLocation: { lga?: string | null; state?: string | null } = {};
   try {
     const body = await req.json();
+    const rate = takeAdviceRequest(`fragility:${String(body.userId || req.headers.get("x-forwarded-for") || "anonymous")}`);
+    if (!rate.allowed) return NextResponse.json({ error: `You can refresh this report up to three times every 30 minutes. Please try again in about ${Math.ceil(rate.retryAfterSeconds / 60)} minutes.` }, { status: 429 });
     const lga = body.lga ?? null;
     const state = body.state ?? null;
     requestLocation = { lga, state };
@@ -96,9 +99,9 @@ export async function POST(req: Request) {
 
     const news = (await fetchLocalNews(String(lga || state || "Nigeria"), 5)) ?? [];
     const sources: FragilitySource[] = [
-      { id: "nimet", title: "NiMet seasonal and severe weather advisories", source: "NiMet", type: "institutional" },
-      { id: "nema", title: "NEMA incident and displacement monitoring", source: "NEMA", type: "institutional" },
-      { id: "nihsa", title: "NIHSA flood outlook and hydrology bulletins", source: "NIHSA", type: "institutional" },
+      { id: "nimet", title: "NiMet seasonal and severe weather advisories", source: "NiMet", url: "https://nimet.gov.ng/", type: "institutional" },
+      { id: "nema", title: "NEMA incident and displacement monitoring", source: "NEMA", url: "https://nema.gov.ng/", type: "institutional" },
+      { id: "nihsa", title: "NIHSA flood outlook and hydrology bulletins", source: "NIHSA", url: "https://nihsa.gov.ng/", type: "institutional" },
       ...news.map((item, index) => ({
         id: `news-${index + 1}`,
         title: item.title,
@@ -144,8 +147,7 @@ export async function POST(req: Request) {
 
 Constraints:
 - Scores must be integers from 0 to 100.
-- Use short, decision-grade language suitable for institutional partners and field coordinators.
-- Summaries must be in ${lang}.
+- Write for the individual farmer in ${lang}, directly using "you" rather than "farmers should". Each section summary must be a concrete 120–180 word response plan: explain the local signal, what it could mean for this farm, what to do this week, what to avoid, and what to monitor. Do not invent evidence that is not listed.
 - Prioritize source traceability by referencing only these source ids: ${sources.map((source) => source.id).join(", ")}.
 - The location is LGA ${lga ?? "unknown"}, state ${state ?? "unknown"}, zone ${zone ?? "unknown"}.
 - Highlight the current zone in zoneScores if known.

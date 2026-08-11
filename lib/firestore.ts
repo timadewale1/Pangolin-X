@@ -67,6 +67,17 @@ export async function addAdvisory(uid: string, data: AdvisoryData) {
   await addDoc(ref, { ...data, createdAt: serverTimestamp() });
 }
 
+export async function addCropAdvisory(uid: string, cropId: string, data: AdvisoryData) {
+  await addDoc(collection(db, "farmers", uid, "cropAdvisories"), { ...data, cropId, createdAt: serverTimestamp() });
+}
+
+export async function fetchLatestCropAdvisory(uid: string, cropId: string): Promise<(AdvisoryData & { id: string }) | null> {
+  const ref = collection(db, "farmers", uid, "cropAdvisories");
+  const snap = await getDocs(query(ref, orderBy("createdAt", "desc"), limit(30)));
+  const match = snap.docs.find((item) => item.get("cropId") === cropId);
+  return match ? { id: match.id, ...(match.data() as AdvisoryData) } : null;
+}
+
 // Add fragility advisory (separate collection)
 // Structured fragility advisory type
 export interface FragilityAdvisoryData {
@@ -74,6 +85,7 @@ export interface FragilityAdvisoryData {
   sections: { title: string; summary: string; severity: "low" | "moderate" | "high" }[];
   weather?: Record<string, unknown> | null;
   createdAt?: unknown;
+  report?: unknown;
 }
 
 export async function addFragilityAdvisory(uid: string, data: FragilityAdvisoryData) {

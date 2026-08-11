@@ -101,6 +101,14 @@ function getRules(cropId: string) {
   return FAMILY_RULES[CROP_FAMILY[cropId] ?? "vegetable"] ?? FAMILY_RULES.vegetable;
 }
 
+export function getStageDayRange(cropId: string, stage?: string) {
+  const rules = getRules(cropId);
+  const stageIndex: Record<string, number> = { just_planted: 0, vegetative: 1, flowering: 2, maturing: rules.length - 1, harvest_ready: rules.length - 1 };
+  const normalizedIndex = Math.min(rules.length - 1, Math.max(0, stageIndex[stage ?? ""] ?? 0));
+  const min = normalizedIndex === 0 ? 0 : rules[normalizedIndex - 1].maxDays + 1;
+  return { min, max: rules[normalizedIndex].maxDays };
+}
+
 export function getCropGrowthInfo(cropId: string, status?: CropStatus): CropGrowthInfo {
   const daysPlanted = daysBetween(status?.plantedAt);
   const rules = getRules(cropId);
