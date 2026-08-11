@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { Camera, Upload } from "lucide-react";
+import { Camera, LocateFixed, Upload } from "lucide-react";
 import { toast } from "react-toastify";
 import RenewalModal from "@/components/ui/RenewalModal";
 import { useDashboard } from "@/context/DashboardContext";
@@ -12,12 +12,13 @@ import { NIGERIA_STATES_LGAS } from "@/lib/nigeriaData";
 import type { Lang } from "@/lib/translations";
 
 export default function SettingsPage() {
-  const { farm, planLabel, subscriptionActive, saveLocation, saveLanguage, uploadPhoto, uploadFarmPhoto, refreshFarmer } = useDashboard();
+  const { farm, planLabel, subscriptionActive, saveLocation, saveCoordinates, saveLanguage, uploadPhoto, uploadFarmPhoto, refreshFarmer } = useDashboard();
   const { t } = useLanguage();
   const [state, setState] = useState(farm?.state ?? "");
   const [lga, setLga] = useState(farm?.lga ?? "");
   const [language, setLanguage] = useState<Lang>((farm?.language as Lang) ?? "en");
   const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [savingLanguage, setSavingLanguage] = useState(false);
   const [renewalOpen, setRenewalOpen] = useState(false);
   const [uploadingFarmPhoto, setUploadingFarmPhoto] = useState(false);
@@ -107,6 +108,19 @@ export default function SettingsPage() {
         >
           {saving ? (t("saving") ?? "Saving...") : (t("save_location") ?? "Save location")}
         </button>
+        <div className="mt-4 border-t border-[#e1e9e1] pt-4">
+          <p className="text-sm leading-6 text-[#617067]">At your farm? Use your phone&apos;s location to save precise latitude and longitude for weather, soil, and risk updates.</p>
+          <button type="button" disabled={locating} onClick={() => {
+            if (!navigator.geolocation) { toast.error("Location services are not available in this browser."); return; }
+            setLocating(true);
+            navigator.geolocation.getCurrentPosition(
+              async (position) => { try { await saveCoordinates(position.coords.latitude, position.coords.longitude); toast.success("Your precise farm location has been saved."); } catch { toast.error("We could not save your location. Please try again."); } finally { setLocating(false); } },
+              () => { setLocating(false); toast.error("We could not access your location. Check your browser permission and try again."); },
+              { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+            );
+          }} className="action-secondary mt-4 inline-flex items-center gap-2 disabled:opacity-60"><LocateFixed className="h-4 w-4" />{locating ? "Getting your location…" : "Use my current farm location"}</button>
+          {farm?.lat != null && farm?.lon != null ? <p className="mt-3 text-xs font-medium text-[#3d6350]">Precise coordinates saved: {farm.lat.toFixed(5)}, {farm.lon.toFixed(5)}</p> : null}
+        </div>
       </section>
 
       <section className="farm-card p-5 md:p-6">

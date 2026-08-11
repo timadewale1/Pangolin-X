@@ -7,6 +7,9 @@ import { getLanguageLabel } from "@/lib/language";
 
 export async function POST(req: Request) {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: "Farm advice is temporarily unavailable. Please try again shortly." }, { status: 503 });
+    }
     const body = await req.json();
     const crops: string[] = body.crops ?? [];
     const weather = body.weather;
@@ -141,7 +144,7 @@ ${newsSummary}`;
       messages: [{ role: "user", content: prompt }],
       temperature: 0.35,
       max_tokens: 1300,
-    });
+    }, { timeout: 30_000 });
 
     const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
     const jsonMatch = text.match(/\{[\s\S]*\}$/m);

@@ -20,6 +20,7 @@ type DashboardContextValue = {
   planLabel: string | null;
   refreshFarmer: () => Promise<FarmerDoc | null>;
   saveLocation: (state: string, lga: string) => Promise<void>;
+  saveCoordinates: (lat: number, lon: number) => Promise<void>;
   saveLanguage: (language: Lang) => Promise<void>;
   saveCrops: (crops: string[]) => Promise<void>;
   saveCropStatus: (cropStatus: Record<string, { stage?: string; plantedAt?: string }>) => Promise<void>;
@@ -120,6 +121,13 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     const update = { state, lga, ...(Number.isFinite(coordinates.lat) && Number.isFinite(coordinates.lon) ? coordinates : {}) };
     await updateDoc(doc(db, "farmers", user.uid), update);
     setFarm((current) => (current ? { ...current, ...update } : current));
+  }, [user]);
+
+  const saveCoordinates = useCallback(async (lat: number, lon: number) => {
+    if (!user || !Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error("invalid_coordinates");
+    const update = { lat, lon };
+    await updateDoc(doc(db, "farmers", user.uid), update);
+    setFarm((current) => current ? { ...current, ...update } : current);
   }, [user]);
 
   const saveLanguage = useCallback(async (language: Lang) => {
@@ -224,6 +232,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       planLabel: getPlanLabel(farm),
       refreshFarmer,
       saveLocation,
+      saveCoordinates,
       saveLanguage,
       saveCrops,
       saveCropStatus,
@@ -235,7 +244,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       closeSidebar,
       toggleSidebar,
     }),
-    [user, authLoading, farm, loading, refreshFarmer, saveLocation, saveLanguage, saveCrops, saveCropStatus, uploadPhoto, uploadFarmPhoto, logout, sidebarOpen, openSidebar, closeSidebar, toggleSidebar]
+    [user, authLoading, farm, loading, refreshFarmer, saveLocation, saveCoordinates, saveLanguage, saveCrops, saveCropStatus, uploadPhoto, uploadFarmPhoto, logout, sidebarOpen, openSidebar, closeSidebar, toggleSidebar]
   );
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;

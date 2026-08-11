@@ -58,11 +58,26 @@ const img = {
 
 export default function Home() {
   const { lang } = useLanguage();
+  const [communityStats, setCommunityStats] = useState<{ farmers: number; states: number } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/public-stats")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (active && data && Number.isFinite(data.farmers) && Number.isFinite(data.states)) {
+          setCommunityStats({ farmers: data.farmers, states: data.states });
+        }
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
   return (
     <div key={lang} className={`${manrope.className} bg-white text-[#14231A] overflow-x-hidden`}>
       <GlobalStyles />
       <Nav />
-      <Hero />
+      <Hero communityStats={communityStats} />
       <TheChallenge />
       <Introducing />
       <Features />
@@ -294,17 +309,17 @@ function Nav() {
             : "bg-transparent border-b border-transparent"
         }`}
       >
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between px-5 py-3.5 sm:px-8">
           <Image src="/Pangolin-x.png" alt="Pangolin-X" width={56} height={56} priority className="drop-shadow-sm z-10" />
 
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden xl:flex items-center gap-4 2xl:gap-7">
             {links.map((l) => (
               <NavLink key={l.href} href={l.href} light={light}>{l.label}</NavLink>
             ))}
             <LanguageButton />
           </div>
 
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden xl:flex items-center gap-2">
             <Link href="/login">
               <button
                 className={`px-4 py-2 text-[15px] font-medium transition-colors ${
@@ -325,7 +340,7 @@ function Nav() {
             onClick={() => setMenuOpen((v) => !v)}
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             aria-expanded={menuOpen}
-            className={`md:hidden relative z-10 w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
+            className={`xl:hidden relative z-10 w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
               light ? "text-white" : "text-[#14231A]"
             }`}
           >
@@ -341,7 +356,7 @@ function Nav() {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed inset-0 z-40 bg-white flex flex-col pt-24 px-8 md:hidden"
+            className="fixed inset-0 z-40 bg-white flex flex-col pt-24 px-8 xl:hidden"
           >
             <div className="flex flex-col gap-1">
               {links.map((l, i) => (
@@ -388,7 +403,7 @@ function Nav() {
 
 /* ============================= HERO ============================= */
 
-function Hero() {
+function Hero({ communityStats }: { communityStats: { farmers: number; states: number } | null }) {
   const { t } = useLanguage();
   const ref = useRef(null);
   const reduce = useReducedMotion();
@@ -436,13 +451,20 @@ function Hero() {
           initial={reduce ? {} : { opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          className="mt-9 flex items-center justify-center gap-4"
+          className="mt-9 flex flex-wrap items-center justify-center gap-3 sm:gap-4"
         >
           <Link href="/signup">
             <button className="inline-flex items-center gap-2 bg-[#16A34A] hover:bg-[#0F7A38] text-white px-7 py-3.5 rounded-full text-[16px] font-semibold transition-all duration-200 hover:shadow-xl hover:shadow-green-900/30 hover:scale-[1.03] active:scale-[0.98]">
               {t("getStarted")}
               <FiArrowRight size={16} />
             </button>
+          </Link>
+          <Link
+            href="/check-weather"
+            className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/10 px-6 py-3.5 text-[16px] font-semibold text-white backdrop-blur-sm transition hover:border-white hover:bg-white/20"
+          >
+            <FiCloud size={17} />
+            {t("checkWeather")}
           </Link>
           <a
             href="#how-it-works"
@@ -461,13 +483,13 @@ function Hero() {
       >
         <div className="container mx-auto px-6 grid grid-cols-2 md:grid-cols-4 divide-x divide-white/15">
           {[
-            { n: 36, suffix: "", l: t("states_covered") },
-            { n: 12400, suffix: "+", l: t("farmers_onboarded") },
+            { n: communityStats?.states ?? null, suffix: "", l: t("states_covered") },
+            { n: communityStats?.farmers ?? null, suffix: "+", l: t("farmers_onboarded") },
             { n: 98, suffix: "%", l: t("forecast_accuracy") },
           ].map((s) => (
             <div key={s.l} className="px-4 py-4 md:py-5 text-center">
               <p className="text-lg md:text-2xl font-extrabold text-white">
-                <Counter value={s.n} suffix={s.suffix} />
+                {s.n === null ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-white/20 align-middle" aria-label="Loading" /> : <Counter value={s.n} suffix={s.suffix} />}
               </p>
               <p className="text-[10px] md:text-xs text-white/60 mt-1">{s.l}</p>
             </div>

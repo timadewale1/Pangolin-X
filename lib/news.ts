@@ -20,7 +20,7 @@ export async function fetchLocalNews(query: string, maxItems = 5): Promise<NewsI
     const q = encodeURIComponent(query);
     // SerpAPI Google News endpoint
     const url = `https://serpapi.com/search.json?engine=google_news&q=${q}&gl=ng&hl=en&api_key=${key}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
     if (!res.ok) return null;
     const j = await res.json();
     if (!j || !Array.isArray(j.news_results)) return null;
