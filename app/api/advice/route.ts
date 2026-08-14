@@ -1,11 +1,24 @@
 import { NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
-import { fetchLocalNews } from "@/lib/news";
+import { fetchCropHealthSignals, fetchLocalNews, fetchMarketSignals } from "@/lib/news";
 import { adminDB } from "@/lib/firebaseAdmin";
 import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
 import { getLanguageLabel } from "@/lib/language";
 import { takeDurableAdviceRequest } from "@/lib/adviceRateLimit";
 import { buildFarmIntelligence, highValueAdvisoryStandard } from "@/lib/farmIntelligence";
+
+function compactText(value: unknown) {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function repeatsEarlierAdvice(value: string, previous: string[]) {
+  const next = compactText(value);
+  if (next.length < 80) return false;
+  return previous.some((item) => {
+    const prior = compactText(item);
+    return prior.length >= 80 && (prior === next || prior.includes(next) || next.includes(prior));
+  });
+}
 
 export async function POST(req: Request) {
   try {
@@ -24,7 +37,7 @@ export async function POST(req: Request) {
     if (!crops || !weather || !body.state || !body.lga) {
       return NextResponse.json({ error: "Missing data (crops, weather, location)" }, { status: 400 });
     }
-    const intelligence = buildFarmIntelligence({
+    let intelligence = buildFarmIntelligence({
       weather,
       forecast: body.forecast,
       soil: body.soil,
@@ -42,15 +55,23 @@ export async function POST(req: Request) {
     // of relying on whichever screen made the request.
     let intelligenceMemory = "No previous farm memory is available yet.";
     let farmerProfile = "The farmer has not provided a display name.";
+    let collectedWeatherHistory: unknown = body.weatherHistory;
+    let collectedMarketSignals: unknown = body.marketSignals;
+    let collectedCropHealthSignals: unknown = null;
+    let collectedVegetation: unknown = body.vegetationIndices;
+    let previousAdviceTexts: string[] = [];
     if (adminDB && typeof body.userId === "string") {
       try {
         const farmer = adminDB.collection("farmers").doc(body.userId);
-        const [profile, advisories, cropAdvisories, fragility, notes] = await Promise.all([
+        const [profile, advisories, cropAdvisories, fragility, notes, weatherHistory, externalSignals, vegetation] = await Promise.all([
           farmer.get(),
           farmer.collection("advisories").orderBy("createdAt", "desc").limit(5).get(),
           farmer.collection("cropAdvisories").orderBy("createdAt", "desc").limit(8).get(),
           farmer.collection("fragility").orderBy("createdAt", "desc").limit(2).get(),
           farmer.collection("farmNotes").orderBy("createdAt", "desc").limit(12).get(),
+          farmer.collection("weatherObservations").orderBy("observedAt", "desc").limit(40).get(),
+          farmer.collection("externalSignals").orderBy("collectedAt", "desc").limit(3).get(),
+          farmer.collection("vegetationObservations").orderBy("collectedAt", "desc").limit(4).get(),
         ]);
         farmerProfile = JSON.stringify(profile.data() ?? {}).slice(0, 4000);
         intelligenceMemory = JSON.stringify({
@@ -58,9 +79,33 @@ export async function POST(req: Request) {
           cropAdvisories: cropAdvisories.docs.map((item) => item.data()),
           fragility: fragility.docs.map((item) => item.data()),
           farmerNotes: notes.docs.map((item) => item.data()),
+          weatherHistory: weatherHistory.docs.map((item) => item.data()),
+          externalSignals: externalSignals.docs.map((item) => item.data()),
+          vegetation: vegetation.docs.map((item) => item.data()),
         }).slice(0, 18000);
+        collectedWeatherHistory = weatherHistory.docs.map((item) => item.data());
+        const newestSignals = externalSignals.docs[0]?.data();
+        collectedMarketSignals = newestSignals?.market ?? collectedMarketSignals;
+        collectedCropHealthSignals = newestSignals?.cropHealth ?? null;
+        collectedVegetation = vegetation.docs.map((item) => item.data());
+        previousAdviceTexts = [...advisories.docs, ...cropAdvisories.docs]
+          .map((item) => item.data().advice ?? item.data().advisory ?? "")
+          .filter((item): item is string => typeof item === "string");
       } catch (error) { console.warn("Farm intelligence memory unavailable", error); }
     }
+    intelligence = buildFarmIntelligence({
+      weather,
+      forecast: body.forecast,
+      soil: body.soil,
+      soilSummary: body.soilSummary,
+      cropStages,
+      weatherHistory: collectedWeatherHistory,
+      irrigationHistory: body.irrigationHistory,
+      inputApplications: body.inputApplications,
+      fieldObservations: body.fieldObservations,
+      vegetationIndices: collectedVegetation,
+      marketSignals: collectedMarketSignals,
+    });
 
     const forecastDate = body.forecastDate ? new Date(body.forecastDate) : null;
     const temp = forecastDate
@@ -113,6 +158,22 @@ export async function POST(req: Request) {
       }
     } catch (error) {
       console.warn("news fetch failed", error);
+    }
+    // Fresh targeted searches fill the gap before the dashboard collector has
+    // persisted its first 12-hour snapshot. Headlines remain evidence links,
+    // never confirmed market prices or disease diagnoses.
+    try {
+      const location = [body.lga, body.state].filter(Boolean).join(", ");
+      if (!collectedMarketSignals || !collectedCropHealthSignals) {
+        const [market, cropHealth] = await Promise.all([
+          !collectedMarketSignals ? fetchMarketSignals(location, crops, 5) : Promise.resolve(null),
+          !collectedCropHealthSignals ? fetchCropHealthSignals(location, crops, 5) : Promise.resolve(null),
+        ]);
+        collectedMarketSignals = collectedMarketSignals ?? market;
+        collectedCropHealthSignals = collectedCropHealthSignals ?? cropHealth;
+      }
+    } catch (error) {
+      console.warn("Targeted intelligence search unavailable", error);
     }
 
     const prompt = `You are Pangolin-X Advisory AI, a premium agro-meteorological field copilot for Nigerian farmers.
@@ -194,6 +255,10 @@ Context:
 - Raw weather payload: ${JSON.stringify(weather).slice(0, 8000)}
 - Forecast payload when supplied: ${JSON.stringify(body.forecast ?? null).slice(0, 8000)}
 - Farmer records when supplied: ${JSON.stringify({ irrigationHistory: body.irrigationHistory ?? null, inputApplications: body.inputApplications ?? null, fieldObservations: body.fieldObservations ?? null, vegetationIndices: body.vegetationIndices ?? null, marketSignals: body.marketSignals ?? null }).slice(0, 8000)}
+- Persisted weather observations: ${JSON.stringify(collectedWeatherHistory).slice(0, 8000)}
+- Market-search evidence (headlines only, not verified prices): ${JSON.stringify(collectedMarketSignals).slice(0, 7000)}
+- Crop-health-search evidence (headlines only, not confirmed diagnoses): ${JSON.stringify(collectedCropHealthSignals).slice(0, 7000)}
+- Sentinel vegetation observations, when available: ${JSON.stringify(collectedVegetation).slice(0, 5000)}
 - Crops: ${crops.join(", ")}
 - Crop stages and planting dates: ${crops.map((crop) => `${crop}: stage=${cropStages?.[crop]?.stage || "unknown"}, planted=${cropStages?.[crop]?.plantedAt || "not recorded"}`).join("; ")}
 - Farmer profile: ${farmerProfile}
@@ -230,6 +295,35 @@ ${newsSummary}`;
         advice: item.advice || `${item.headline} ${item.summary}`.trim(),
       })),
     };
+    if (repeatsEarlierAdvice(renderAdvisoryText(normalized), previousAdviceTexts)) {
+      const noChange = {
+        ...normalized,
+        noNovelInsight: true,
+        intelligenceSummary: "No material data-backed change was detected since your last advisory.",
+        executiveSummary: "The latest recorded weather, soil, crop-stage, and farm-history context does not show a material new signal. Pangolin-X will not repeat the previous recommendation as if it were new.",
+        priorityWindow: "No new decision window detected. Keep your current plan unless a new observation or forecast changes it.",
+        items: [{
+          crop: farmRequest ? "Farm-wide priority" : (crops[0] ?? "Farm"),
+          headline: "No material new signal",
+          summary: "The current context matches the basis of your most recent advisory closely enough that a new recommendation would repeat prior guidance.",
+          decision: "Keep the current plan and record any new field observation before requesting another advisory.",
+          decisionType: "monitor" as const,
+          priority: 1 as const,
+          riskLevel: "low" as const,
+          confidence: 90,
+          confidenceLabel: "high" as const,
+          evidence: ["Current context matches the recent advisory basis"],
+          consequence: "Repeating unchanged advice can distract from genuinely new farm decisions.",
+          when: "Until new weather, field, crop-stage, or market evidence is recorded.",
+          actions: [],
+          watchouts: [],
+          timing: ["No new decision window"],
+          sourceTags: ["Farm history"],
+          advice: "Insight: no material data-backed change has been detected since your last advisory. Why it matters: the available context is substantially unchanged. Recommended decision: keep the current plan and record any new field observation. When: reassess after new weather, crop-stage, market, or field evidence appears. Confidence: high.",
+        }],
+      };
+      return NextResponse.json({ ...noChange, advice: renderAdvisoryText(noChange) });
+    }
 
     return NextResponse.json({
       ...normalized,

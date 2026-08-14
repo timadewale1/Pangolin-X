@@ -96,6 +96,23 @@ export default function DashboardOverviewPage() {
       .then(setWeather).catch((error) => { console.error("Unable to load weather", error); setWeatherError(true); }).finally(() => setWeatherLoading(false));
   }, [farm?.lat, farm?.lon]);
   useEffect(() => { loadWeather(); const timer = window.setInterval(loadWeather, 15 * 60 * 1000); return () => window.clearInterval(timer); }, [loadWeather]);
+  useEffect(() => {
+    if (!user || !weather || !hasCoordinates) return;
+    fetch("/api/intelligence/collect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user.uid,
+        weather,
+        lat: farm?.lat,
+        lon: farm?.lon,
+        location: [farm?.lga, farm?.state].filter(Boolean).join(", "),
+        crops: farm?.crops ?? [],
+        refreshSignals: true,
+        collectVegetation: true,
+      }),
+    }).catch(() => undefined);
+  }, [farm?.crops, farm?.lat, farm?.lga, farm?.lon, farm?.state, hasCoordinates, user, weather]);
 
   return <div className="space-y-5 md:space-y-7">
     <section className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">

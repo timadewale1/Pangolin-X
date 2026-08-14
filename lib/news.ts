@@ -11,8 +11,7 @@ export type NewsItem = {
   thumbnail?: string;
 };
 
-// Fetch recent news for a given query (e.g., LGA or state) using SerpAPI Google News
-export async function fetchLocalNews(query: string, maxItems = 5): Promise<NewsItem[] | null> {
+async function fetchGoogleNews(query: string, maxItems = 5): Promise<NewsItem[] | null> {
   const key = process.env.SERP_GOOGLE_API_KEY || process.env.NEXT_PUBLIC_SERP_GOOGLE_API_KEY;
   if (!key) return null;
 
@@ -54,4 +53,23 @@ export async function fetchLocalNews(query: string, maxItems = 5): Promise<NewsI
     console.warn('fetchLocalNews error', e);
     return null;
   }
+}
+
+// General local context used by fragility intelligence.
+export async function fetchLocalNews(query: string, maxItems = 5): Promise<NewsItem[] | null> {
+  return fetchGoogleNews(query, maxItems);
+}
+
+// These searches are intentionally separate. A price headline is not treated
+// as a crop-health signal (and vice versa) by the advisory engine.
+export async function fetchMarketSignals(location: string, crops: string[], maxItems = 5): Promise<NewsItem[] | null> {
+  const cropTerms = crops.slice(0, 4).join(" OR ");
+  const query = [location, "Nigeria", cropTerms, "market price farmgate input price"].filter(Boolean).join(" ");
+  return fetchGoogleNews(query, maxItems);
+}
+
+export async function fetchCropHealthSignals(location: string, crops: string[], maxItems = 5): Promise<NewsItem[] | null> {
+  const cropTerms = crops.slice(0, 4).join(" OR ");
+  const query = [location, "Nigeria", cropTerms, "pest disease outbreak crop health"].filter(Boolean).join(" ");
+  return fetchGoogleNews(query, maxItems);
 }
