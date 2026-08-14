@@ -50,7 +50,7 @@ export default function AdvisoriesPage() {
       const weatherResponse = await fetch("/api/weather", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat: farm.lat, lon: farm.lon }),
+        body: JSON.stringify({ lat: farm.lat, lon: farm.lon, days: 5 }),
       });
       const weather = await weatherResponse.json();
       if (!weatherResponse.ok) throw new Error(weather?.error ?? "Weather is temporarily unavailable.");

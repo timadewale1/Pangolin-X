@@ -46,7 +46,7 @@ export default function CropDetailPage() {
     fetch("/api/weather", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lat: farm.lat, lon: farm.lon }),
+      body: JSON.stringify({ lat: farm.lat, lon: farm.lon, days: 5 }),
     })
       .then((response) => { if (!response.ok) throw new Error("Weather unavailable"); return response.json(); })
       .then((json) => setWeather(json))

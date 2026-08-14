@@ -91,7 +91,7 @@ export default function DashboardOverviewPage() {
     if (farm?.lat == null || farm?.lon == null) return;
     setWeatherLoading(true);
     setWeatherError(false);
-    fetch("/api/weather", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat: farm.lat, lon: farm.lon }) })
+    fetch("/api/weather", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat: farm.lat, lon: farm.lon, days: 5 }) })
       .then(async (response) => { if (!response.ok) throw new Error("Weather request failed"); return response.json(); })
       .then(setWeather).catch((error) => { console.error("Unable to load weather", error); setWeatherError(true); }).finally(() => setWeatherLoading(false));
   }, [farm?.lat, farm?.lon]);

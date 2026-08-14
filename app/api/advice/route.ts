@@ -6,6 +6,7 @@ import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
 import { getLanguageLabel } from "@/lib/language";
 import { takeDurableAdviceRequest } from "@/lib/adviceRateLimit";
 import { buildFarmIntelligence, highValueAdvisoryStandard } from "@/lib/farmIntelligence";
+import type { AdvisoryResponse } from "@/lib/dashboard-types";
 
 function compactText(value: unknown) {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -18,6 +19,56 @@ function repeatsEarlierAdvice(value: string, previous: string[]) {
     const prior = compactText(item);
     return prior.length >= 80 && (prior === next || prior.includes(next) || next.includes(prior));
   });
+}
+
+function advisoryQualityFailures(advisory: AdvisoryResponse) {
+  const failures: string[] = [];
+  if (advisory.items.length < 1 || advisory.items.length > 3) failures.push("It did not return one to three ranked decisions.");
+  for (const item of advisory.items) {
+    const prose = [item.headline, item.summary, item.advice, item.whyNow, item.decision, item.when].filter(Boolean).join(" ").toLowerCase();
+    if (!item.decision || !item.when || !item.confidenceLabel || !item.evidence?.length || !item.consequence) {
+      failures.push("A decision is missing its decision, timing, confidence, evidence, or consequence.");
+    }
+    if (!advisory.noNovelInsight && /\b(ensure proper drainage|monitor your crops|inspect(?:ing)? (your )?(crop|field|maize|cassava|rice|yam)|prioriti[sz]e inspect|watch for pests|avoid over.?irrigat|monitor (your )?irrigation|signs of disease)\b/.test(prose)) {
+      failures.push("It uses a generic baseline instruction rather than a data-derived decision.");
+    }
+    if (!advisory.noNovelInsight && /\b(disease|fungal|pest|waterlogging|flood)\b/.test(prose) && (!item.evidence?.some((evidence) => /forecast|rain|weather alert|pest|disease|field observation|local signal/i.test(evidence)) || !/\d/.test(prose))) {
+      failures.push("It asserts a crop-health or water-risk pathway without matching supplied evidence.");
+    }
+  }
+  return [...new Set(failures)];
+}
+
+function noMaterialSignalResponse(crop: string, farmWide: boolean): AdvisoryResponse {
+  const subject = farmWide ? "Farm-wide priority" : crop;
+  return {
+    header: "Pangolin-X decision update",
+    generatedFor: "Your recorded farm context",
+    intelligenceSummary: "No material data-backed change was detected from the currently available signals.",
+    noNovelInsight: true,
+    executiveSummary: "The available context does not support a new high-value intervention. Pangolin-X is avoiding routine advice so that a future advisory can focus on a genuine change in weather, crop stage, field observation, vegetation, market, or local crop-health evidence.",
+    priorityWindow: "No new decision window detected.",
+    regionalSignals: [],
+    items: [{
+      crop: subject,
+      headline: "No material new signal",
+      summary: "The currently available evidence does not establish a non-obvious risk or opportunity that would justify changing your plan.",
+      decision: "Keep the current plan until new farm evidence is recorded.",
+      decisionType: "monitor",
+      priority: 1,
+      riskLevel: "low",
+      confidence: 90,
+      confidenceLabel: "high",
+      evidence: ["Available weather, soil, crop-stage, and farm-history context"],
+      consequence: "Changing inputs or field operations without a new signal would not be data-justified.",
+      when: "Reassess after a new forecast, field observation, crop-stage update, or verified local signal.",
+      actions: [],
+      watchouts: [],
+      timing: ["No new decision window"],
+      sourceTags: ["Farm context"],
+      advice: "Insight: no material data-backed change was detected. Why it matters: the available records do not establish a non-obvious risk or opportunity. Recommended decision: keep the current plan. When: reassess after new evidence is recorded. Confidence: high.",
+    }],
+  };
 }
 
 export async function POST(req: Request) {
@@ -272,18 +323,34 @@ ${soilInfo}
 Recent local news and signals:
 ${newsSummary}`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    let completion = await openai.chat.completions.create({
+      model: "gpt-4o",
       response_format: { type: "json_object" },
       messages: [{ role: "user", content: prompt }],
       temperature: 0.35,
       max_tokens: farmRequest ? 2200 : singleCropRequest ? 2200 : 2600,
     }, { timeout: 55_000 });
 
-    const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
-    const parsedPayload = parseAdvisoryPayload(JSON.parse(text));
-    if (!parsedPayload) {
-      return NextResponse.json({ error: "We could not produce a reliable advisory from the available farm information. Please try again after a few minutes." }, { status: 502 });
+    let text = completion.choices?.[0]?.message?.content?.trim() ?? "";
+    let parsedPayload = parseAdvisoryPayload(JSON.parse(text));
+    const failures = parsedPayload ? advisoryQualityFailures(parsedPayload) : ["The response was not valid advisory JSON."];
+    if (failures.length) {
+      completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        response_format: { type: "json_object" },
+        messages: [{
+          role: "user",
+          content: prompt + "\n\nQUALITY REVIEW FAILURE. Rewrite the full JSON response. The earlier draft is rejected for these reasons: " + failures.join(" ") + " Do not mention a disease, pest, waterlogging, flooding, drainage, or irrigation decision unless the verified context supplies a specific supporting signal. If the evidence only supports normal conditions, set noNovelInsight to true rather than creating routine tasks.",
+        }],
+        temperature: 0.1,
+        max_tokens: farmRequest ? 2000 : singleCropRequest ? 2000 : 2400,
+      }, { timeout: 55_000 });
+      text = completion.choices?.[0]?.message?.content?.trim() ?? "";
+      parsedPayload = parseAdvisoryPayload(JSON.parse(text));
+    }
+    if (!parsedPayload || advisoryQualityFailures(parsedPayload).length) {
+      const noSignal = noMaterialSignalResponse(crops[0] ?? "Farm", farmRequest);
+      return NextResponse.json({ ...noSignal, advice: renderAdvisoryText(noSignal) });
     }
     const advisory = parsedPayload;
     const normalized = {
