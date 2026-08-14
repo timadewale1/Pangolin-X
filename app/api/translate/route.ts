@@ -1,0 +1,4 @@
+import { NextResponse } from "next/server";
+import { openai } from "@/lib/openai";
+import { getLanguageLabel } from "@/lib/language";
+export async function POST(request: Request) { try { const { text, lang } = await request.json(); if (typeof text !== "string" || !text.trim() || lang === "en") return NextResponse.json({ text }); const result = await openai.chat.completions.create({ model: "gpt-4o-mini", temperature: 0, max_tokens: 1800, messages: [{ role: "system", content: `Translate exactly into clear farmer-friendly ${getLanguageLabel(lang)}. Preserve all advice, lists and detail. Return only the translation.` }, { role: "user", content: text.slice(0, 10000) }] }); return NextResponse.json({ text: result.choices[0]?.message?.content?.trim() || text }); } catch { return NextResponse.json({ error: "Translation is temporarily unavailable." }, { status: 503 }); } }

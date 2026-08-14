@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CloudRain, Droplets, Leaf, MapPin, ShieldAlert, Sprout, ThermometerSun, Wind } from "lucide-react";
+import { ArrowRight, CloudRain, Droplets, Leaf, MapPin, RefreshCw, ShieldAlert, Sprout, ThermometerSun, Wind } from "lucide-react";
 import { useDashboard } from "@/context/DashboardContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getCropImage, getCropOption } from "@/lib/crops";
@@ -29,6 +29,7 @@ export default function DashboardOverviewPage() {
   const [cropAdvice, setCropAdvice] = useState<Record<string, string>>({});
   const [risk, setRisk] = useState<{ title: string; text: string; severity?: string } | null>(null);
   const [weatherError, setWeatherError] = useState(false);
+  const [weatherLoading, setWeatherLoading] = useState(false);
   const [adviceLoading, setAdviceLoading] = useState(false);
 
   const soil = useMemo(() => normalizeSoilSummary(farm?.soilSummary ?? farm?.soil, lang), [farm?.soilSummary, farm?.soil, lang]);
@@ -73,14 +74,17 @@ export default function DashboardOverviewPage() {
       else if (farm?.state && farm?.lga) fetch("/api/fragility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user?.uid, state: farm.state, lga: farm.lga, lang }) }).then((response) => response.ok ? response.json() : null).then(async (fresh) => { if (fresh?.sections?.[0]) { setRisk({ title: fresh.header ?? t("risk_to_watch"), text: fresh.sections[0].summary ?? "", severity: fresh.sections[0].severity }); if (user) await addFragilityAdvisory(user.uid, { header: fresh.header, sections: fresh.sections, weather: null, report: fresh }); } }).catch(() => undefined);
     }).catch((error) => console.error("Unable to load farm summaries", error));
   }, [farm?.lga, farm?.state, lang, user, t]);
+  useEffect(() => { if (!latestAdvice?.text || lang === "en") return; fetch("/api/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: latestAdvice.text, lang }) }).then((r) => r.ok ? r.json() : null).then((data) => { if (data?.text) setLatestAdvice((current) => current ? { ...current, text: data.text } : current); }).catch(() => undefined); }, [lang]);
 
-  useEffect(() => {
+  const loadWeather = useCallback(() => {
     if (farm?.lat == null || farm?.lon == null) return;
+    setWeatherLoading(true);
     setWeatherError(false);
     fetch("/api/weather", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat: farm.lat, lon: farm.lon }) })
       .then(async (response) => { if (!response.ok) throw new Error("Weather request failed"); return response.json(); })
-      .then(setWeather).catch((error) => { console.error("Unable to load weather", error); setWeatherError(true); });
+      .then(setWeather).catch((error) => { console.error("Unable to load weather", error); setWeatherError(true); }).finally(() => setWeatherLoading(false));
   }, [farm?.lat, farm?.lon]);
+  useEffect(() => { loadWeather(); const timer = window.setInterval(loadWeather, 15 * 60 * 1000); return () => window.clearInterval(timer); }, [loadWeather]);
 
   return <div className="space-y-5 md:space-y-7">
     <section className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
@@ -93,15 +97,15 @@ export default function DashboardOverviewPage() {
         </div>
       </div>
       <div className="farm-card flex flex-col justify-between p-5 md:p-6">
-        <div><p className="eyebrow">{t("today_weather")}</p>{current ? <><div className="mt-4 flex items-end gap-3"><span className="text-6xl font-bold tracking-[-.07em] text-[#183127]">{Math.round(current.temp ?? 0)}°</span><span className="mb-2 capitalize text-sm text-[#617067]">{condition ?? t("current_conditions")}</span></div><div className="mt-5 grid grid-cols-3 gap-2"><Metric icon={Droplets} label={t("humidity")} value={`${current.humidity ?? "–"}%`} /><Metric icon={Wind} label={t("wind")} value={`${weather?.current?.wind_speed ?? weather?.wind?.speed ?? "–"} m/s`} /><Metric icon={ThermometerSun} label={t("feels_like")} value={`${Math.round(current.feels_like ?? current.temp ?? 0)}°`} /></div></> : <div className="mt-6"><div className="skeleton h-14 w-28" /><p className="mt-4 text-sm leading-6 text-[#617067]">{weatherError ? t("weather_unavailable") : !hasCoordinates ? t("add_location_weather") : t("checking_weather")}</p></div>}</div>
+        <div><div className="flex items-center justify-between"><p className="eyebrow">{t("today_weather")}</p><button onClick={loadWeather} disabled={weatherLoading || !hasCoordinates} className="rounded-lg p-2 text-[#28533b] hover:bg-[#eef5ed] disabled:opacity-40" aria-label="Refresh weather"><RefreshCw className={`h-4 w-4 ${weatherLoading ? "animate-spin" : ""}`} /></button></div>{current ? <><div className="mt-4 flex items-end gap-3"><span className="text-6xl font-bold tracking-[-.07em] text-[#183127]">{Math.round(current.temp ?? 0)}°</span><span className="mb-2 capitalize text-sm text-[#617067]">{condition ?? t("current_conditions")}</span></div><div className="mt-5 grid grid-cols-3 gap-2"><Metric icon={Droplets} label={t("humidity")} value={`${current.humidity ?? "–"}%`} /><Metric icon={Wind} label={t("wind")} value={`${weather?.current?.wind_speed ?? weather?.wind?.speed ?? "–"} m/s`} /><Metric icon={ThermometerSun} label={t("feels_like")} value={`${Math.round(current.feels_like ?? current.temp ?? 0)}°`} /></div></> : <div className="mt-6"><div className="skeleton h-14 w-28" /><p className="mt-4 text-sm leading-6 text-[#617067]">{weatherError ? t("weather_unavailable") : !hasCoordinates ? t("add_location_weather") : t("checking_weather")}</p></div>}</div>
         <Link href="/dashboard/forecast" className="mt-6 flex items-center justify-between border-t border-[#dce3d9] pt-4 text-sm font-bold text-[#28533b]">{t("plan_forecast")} <ArrowRight className="h-4 w-4" /></Link>
       </div>
     </section>
 
     <section className="grid gap-4 md:grid-cols-3">
-      <OverviewMetric icon={Leaf} label="Active crops" value={String(crops.length)} description={crops.length ? `${crops.filter((crop) => crop.growth.harvestReady).length} nearing harvest` : "Add crops to begin tracking"} href="/dashboard/crops" />
-      <OverviewMetric icon={Sprout} label="Soil condition" value={soil.label} description={soil.pH != null ? `Soil pH ${soil.pH}` : "Add soil data for deeper guidance"} href="/dashboard/settings" />
-      <OverviewMetric icon={ShieldAlert} label="Risk to watch" value={risk?.severity ? `${risk.severity[0].toUpperCase()}${risk.severity.slice(1)}` : "Review"} description={risk?.text ? risk.text.slice(0, 74) : "Check local risks before important field work"} href="/dashboard/fragility" />
+      <OverviewMetric icon={Leaf} label={t("active_crops")} value={String(crops.length)} />
+      <OverviewMetric icon={Sprout} label={t("soil_condition")} value={soil.label} />
+      <OverviewMetric icon={ShieldAlert} label={t("risk_to_watch")} value={risk?.severity ? `${risk.severity[0].toUpperCase()}${risk.severity.slice(1)}` : "Review"} />
     </section>
 
     <section className="grid gap-5 xl:grid-cols-[1.3fr_.7fr]">
@@ -113,5 +117,5 @@ export default function DashboardOverviewPage() {
 }
 
 function Metric({ icon: Icon, label, value }: { icon: typeof Wind; label: string; value: string }) { return <div className="rounded-xl bg-[#f1f2eb] p-3"><Icon className="h-4 w-4 text-[#6b8b50]" /><p className="mt-3 text-[.64rem] font-bold uppercase tracking-[.08em] text-[#617067]">{label}</p><p className="mt-1 text-sm font-bold text-[#183127]">{value}</p></div>; }
-function OverviewMetric({ icon: Icon, label, value, description, href }: { icon: typeof Leaf; label: string; value: string; description: string; href: string }) { return <Link href={href} className="farm-card group p-5 transition hover:border-[#b9cbb9]"><Icon className="h-5 w-5 text-[#6b8b50]" /><p className="mt-5 metric-label">{label}</p><p className="mt-2 truncate text-2xl font-bold tracking-[-.04em] text-[#183127]">{value}</p><p className="mt-2 text-sm leading-5 text-[#617067]">{description}</p></Link>; }
+function OverviewMetric({ icon: Icon, label, value }: { icon: typeof Leaf; label: string; value: string }) { return <div className="farm-card p-5"><Icon className="h-5 w-5 text-[#6b8b50]" /><p className="mt-5 metric-label">{label}</p><p className="mt-2 truncate text-2xl font-bold tracking-[-.04em] text-[#183127]">{value}</p></div>; }
 function EmptyPanel({ title, text, href, action }: { title: string; text: string; href: string; action: string }) { return <div className="mt-5 rounded-xl bg-[#f1f2eb] p-4"><p className="font-bold text-[#183127]">{title}</p><p className="mt-1 text-sm leading-6 text-[#617067]">{text}</p><Link href={href} className="mt-4 inline-flex text-sm font-bold text-[#28533b]">{action} <ArrowRight className="ml-2 h-4 w-4" /></Link></div>; }

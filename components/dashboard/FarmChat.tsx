@@ -1,64 +1,13 @@
 "use client";
-
-import { useEffect, useState } from "react";
-import { addDoc, collection, getDocs, limit, orderBy, query, serverTimestamp } from "firebase/firestore";
-import { MessageCircle, Plus, Send, X } from "lucide-react";
-import { db } from "@/lib/firebase";
+import { useState } from "react";
+import { ImagePlus, MessageCircle, Mic, Send, Square, Volume2, X } from "lucide-react";
 import { useDashboard } from "@/context/DashboardContext";
 
 type Message = { role: "assistant" | "user"; text: string };
-const languages = ["English", "Hausa", "Igbo", "Yoruba", "Nigerian Pidgin"];
-
 export default function FarmChat() {
-  const { user, farm } = useDashboard();
-  const [open, setOpen] = useState(false);
-  const [language, setLanguage] = useState<string | null>(null);
-  const [sessions, setSessions] = useState<Array<{ id: string; title: string; language: string }>>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-
-  useEffect(() => {
-    if (!user || !open) return;
-    getDocs(query(collection(db, "farmers", user.uid, "chatSessions"), orderBy("updatedAt", "desc"), limit(12)))
-      .then((snapshot) => setSessions(snapshot.docs.map((item) => ({ id: item.id, title: String(item.data().title ?? "Farm conversation"), language: String(item.data().language ?? "English") }))))
-      .catch(() => undefined);
-  }, [open, user]);
-
-  const begin = (selected: string) => {
-    setLanguage(selected);
-    setMessages([{ role: "assistant", text: `Welcome. I am here to help with your farm. What would you like to discuss today?` }]);
-    setSessionId(null);
-  };
-
-  const resume = async (id: string, selectedLanguage: string) => {
-    if (!user) return;
-    const snapshot = await getDocs(query(collection(db, "farmers", user.uid, "chatSessions", id, "messages"), orderBy("createdAt", "asc"), limit(80)));
-    setSessionId(id); setLanguage(selectedLanguage);
-    setMessages(snapshot.docs.map((item) => ({ role: item.data().role === "user" ? "user" as const : "assistant" as const, text: String(item.data().text ?? "") })));
-  };
-
-  const send = async () => {
-    if (!draft.trim() || !language || !user || sending) return;
-    const text = draft.trim();
-    setDraft(""); setSending(true); setMessages((current) => [...current, { role: "user", text }]);
-    try {
-      let activeSession = sessionId;
-      if (!activeSession) {
-        const created = await addDoc(collection(db, "farmers", user.uid, "chatSessions"), { title: text.slice(0, 56), language, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-        activeSession = created.id; setSessionId(activeSession);
-      }
-      await addDoc(collection(db, "farmers", user.uid, "chatSessions", activeSession, "messages"), { role: "user", text, createdAt: serverTimestamp() });
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, language, farm: { lga: farm?.lga, state: farm?.state, crops: farm?.crops } }) });
-      const json = await response.json();
-      const reply = response.ok ? json.reply : "The farm assistant is temporarily unavailable. Please try again.";
-      setMessages((current) => [...current, { role: "assistant", text: reply }]);
-      await addDoc(collection(db, "farmers", user.uid, "chatSessions", activeSession, "messages"), { role: "assistant", text: reply, createdAt: serverTimestamp() });
-    } finally { setSending(false); }
-  };
-
-  return <div className="fixed bottom-5 right-5 z-[70]">
-    {open ? <section className="mb-3 flex h-[min(38rem,calc(100vh-7rem))] w-[min(24rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-3xl border border-[#cfe4d4] bg-white shadow-2xl"><header className="flex items-center justify-between bg-[#087a3d] px-4 py-4 text-white"><div><p className="font-bold">Pangolin-X Farm Assistant</p><p className="text-xs text-white/75">Ask about your farm anytime</p></div><div className="flex gap-1"><button onClick={() => { setLanguage(null); setSessionId(null); setMessages([]); }} className="rounded-lg p-2 hover:bg-white/10" aria-label="Start new chat"><Plus className="h-4 w-4" /></button><button onClick={() => setOpen(false)} className="rounded-lg p-2 hover:bg-white/10" aria-label="Close chat"><X className="h-4 w-4" /></button></div></header>{!language ? <div className="overflow-y-auto p-5"><p className="text-lg font-bold text-[#183127]">Choose your language</p><p className="mt-1 text-sm text-[#617067]">The assistant will reply in the language you choose.</p><div className="mt-5 grid gap-2">{languages.map((item) => <button key={item} onClick={() => begin(item)} className="rounded-xl border border-[#dce3d9] px-4 py-3 text-left text-sm font-bold text-[#183127] hover:border-[#087a3d] hover:bg-[#e9f6ec]">{item}</button>)}</div>{sessions.length ? <div className="mt-6 border-t border-[#e2e9df] pt-5"><p className="text-xs font-bold uppercase tracking-wide text-[#617067]">Continue a conversation</p><div className="mt-2 grid gap-2">{sessions.map((item) => <button key={item.id} onClick={() => void resume(item.id, item.language)} className="truncate rounded-xl bg-[#eef4ec] px-3 py-2 text-left text-sm font-bold text-[#183127]">{item.title}</button>)}</div></div> : null}</div> : <><div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">{messages.map((message, index) => <div key={index} className={`max-w-[88%] rounded-2xl px-3 py-2.5 text-sm leading-6 ${message.role === "user" ? "ml-auto bg-[#087a3d] text-white" : "bg-[#eef4ec] text-[#183127]"}`}>{message.text}</div>)}{sending ? <div className="w-fit rounded-2xl bg-[#eef4ec] px-3 py-2 text-sm text-[#617067]">Thinking…</div> : null}</div><div className="border-t border-[#e2e9df] p-3"><div className="flex gap-2"><input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void send(); }} className="min-w-0 flex-1 rounded-xl border border-[#d5e2d3] px-3 py-2 text-sm outline-none focus:border-[#087a3d]" placeholder="Ask about your farm" /><button onClick={() => void send()} className="rounded-xl bg-[#087a3d] p-2.5 text-white" aria-label="Send message"><Send className="h-4 w-4" /></button></div></div></>}</section> : null}<button onClick={() => setOpen((value) => !value)} className="ml-auto grid h-14 w-14 place-items-center rounded-full bg-[#0b9a49] text-white shadow-lg shadow-green-900/25 transition hover:scale-105" aria-label="Open farm assistant"><MessageCircle className="h-6 w-6" /></button>
-  </div>;
+  const { farm } = useDashboard(); const [open, setOpen] = useState(false); const [messages, setMessages] = useState<Message[]>([]); const [draft, setDraft] = useState(""); const [image, setImage] = useState<string | null>(null); const [sending, setSending] = useState(false); const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
+  const send = async () => { if ((!draft.trim() && !image) || sending) return; const text = draft.trim() || "Please inspect this farm image."; setDraft(""); setSending(true); setMessages((m) => [...m, { role: "user", text }]); try { const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, imageDataUrl: image, language: farm?.language || "English", history: messages, farm: { lga: farm?.lga, state: farm?.state, crops: farm?.crops, soilSummary: farm?.soilSummary } }) }); const data = await res.json(); setImage(null); setMessages((m) => [...m, { role: "assistant", text: res.ok ? data.reply : "The farm assistant is temporarily unavailable. Please try again." }]); } finally { setSending(false); } };
+  const voice = async () => { if (recorder) { recorder.stop(); setRecorder(null); return; } try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); const r = new MediaRecorder(stream); const parts: Blob[] = []; r.ondataavailable = (e) => parts.push(e.data); r.onstop = async () => { stream.getTracks().forEach((t) => t.stop()); const form = new FormData(); form.append("audio", new File([new Blob(parts)], "voice.webm")); const res = await fetch("/api/chat/transcribe", { method: "POST", body: form }); const data = await res.json(); if (res.ok) setDraft((d) => `${d}${d ? " " : ""}${data.text}`); }; r.start(); setRecorder(r); } catch { /* permission is handled by the browser */ } };
+  const speak = async (text: string) => { const res = await fetch("/api/chat/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }); if (res.ok) new Audio(URL.createObjectURL(await res.blob())).play().catch(() => undefined); };
+  return <div className="fixed bottom-5 right-5 z-[70]">{open ? <section className="mb-3 flex h-[min(38rem,calc(100vh-7rem))] w-[min(25rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-3xl border border-[#cfe4d4] bg-white shadow-2xl"><header className="flex items-center justify-between bg-[#087a3d] px-4 py-4 text-white"><div><p className="font-bold">Pangolin-X Farm Assistant</p><p className="text-xs text-white/75">Your connected farm intelligence</p></div><button onClick={() => setOpen(false)} className="p-2"><X /></button></header><div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">{messages.length ? messages.map((m, i) => <div key={i} className={`max-w-[88%] break-words whitespace-pre-wrap rounded-2xl px-3 py-2.5 text-sm leading-6 ${m.role === "user" ? "ml-auto bg-[#087a3d] text-white" : "bg-[#eef4ec] text-[#183127]"}`}>{m.text}{m.role === "assistant" ? <button onClick={() => void speak(m.text)} className="ml-2 inline-flex align-middle text-[#087a3d]" aria-label="Listen"><Volume2 className="h-4 w-4" /></button> : null}</div>) : <p className="rounded-2xl bg-[#eef4ec] p-4 text-sm leading-6 text-[#183127]">Hello. Ask about your crops, field conditions, or send a farm photo.</p>}{sending ? <p className="text-sm text-[#617067]">Thinking…</p> : null}</div><div className="border-t border-[#e2e9df] p-3">{image ? <p className="mb-2 text-xs text-[#166534]">Photo attached <button onClick={() => setImage(null)} className="underline">remove</button></p> : null}<div className="flex items-end gap-2"><label className="rounded-xl p-2 text-[#166534] hover:bg-[#eef4ec]"><ImagePlus className="h-5 w-5" /><input className="hidden" type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (!f || f.size > 4 * 1024 * 1024) return; const r = new FileReader(); r.onload = () => setImage(String(r.result)); r.readAsDataURL(f); }} /></label><button onClick={() => void voice()} className="rounded-xl p-2 text-[#166534] hover:bg-[#eef4ec]" aria-label="Voice input">{recorder ? <Square className="h-5 w-5 text-red-600" /> : <Mic className="h-5 w-5" />}</button><textarea value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} rows={1} className="max-h-28 min-w-0 flex-1 resize-none rounded-xl border border-[#d5e2d3] px-3 py-2 text-sm leading-5 outline-none focus:border-[#087a3d]" placeholder="Ask about your farm" /><button onClick={() => void send()} className="rounded-xl bg-[#087a3d] p-2.5 text-white"><Send className="h-4 w-4" /></button></div></div></section> : null}<button onClick={() => setOpen((v) => !v)} className="ml-auto grid h-14 w-14 place-items-center rounded-full bg-[#0b9a49] text-white shadow-lg"><MessageCircle className="h-6 w-6" /></button></div>;
 }

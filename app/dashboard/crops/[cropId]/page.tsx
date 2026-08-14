@@ -113,6 +113,7 @@ export default function CropDetailPage() {
       if (saved?.advice || saved?.advisory) setAdvice(saved.advice ?? saved.advisory ?? "");
     }).catch((error) => console.error("Failed to load saved crop advice", error));
   }, [cropId, user]);
+  useEffect(() => { if (!advice || lang === "en") return; fetch("/api/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: advice, lang }) }).then((r) => r.ok ? r.json() : null).then((data) => { if (data?.text) setAdvice(data.text); }).catch(() => undefined); }, [lang]);
 
   if (!crop) {
     return (

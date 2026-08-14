@@ -6,6 +6,7 @@ import { useDashboard } from "@/context/DashboardContext";
 import { useLanguage } from "@/context/LanguageContext";
 import type { FragilityReport } from "@/lib/dashboard-types";
 import { addFragilityAdvisory, fetchFragilityAdvisories } from "@/lib/firestore";
+import Loader from "@/components/Loader";
 
 export default function FragilityPage() {
   const { farm, user } = useDashboard();
@@ -152,11 +153,7 @@ export default function FragilityPage() {
             ))}
           </section>
         </>
-      ) : (
-        <div className="farm-card border-dashed p-10 text-center text-[#617067]">
-          {farm?.lga ? "Refresh this page to check the latest local farm risks." : "Add your farm location in Settings to receive local risk guidance."}
-        </div>
-      )}
+      ) : loading ? <div className="flex min-h-[22rem] items-center justify-center rounded-[2rem] border border-[#d8e5d9] bg-[#f7faf6]"><div className="text-center"><Loader /><p className="mt-4 text-sm font-medium text-[#617067]">Preparing your resilience report…</p></div></div> : <div className="rounded-[2rem] border border-dashed border-[#d3dfd2] bg-[#f7faf6] p-10 text-center text-[#617067]">Add your farm location in Settings to receive local risk guidance.</div>}
     </div>
   );
 }
