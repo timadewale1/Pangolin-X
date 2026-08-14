@@ -29,6 +29,17 @@ YORUBA_TTS_INSTRUCTION_VERSION=sny-v1
 DEFAULT_TTS_VOICE=coral
 ```
 
+## SoilHive soil data
+
+Farm soil profiles are fetched server-side from SoilHive using the OAuth client-credentials flow. Add these to your local and production environment; never expose them as `NEXT_PUBLIC_*` variables:
+
+```bash
+SOILHIVE_CLIENT_ID=your_client_id
+SOILHIVE_CLIENT_SECRET=your_client_secret
+# Optional short-lived token for diagnostics only; the client credentials flow is the normal path.
+SOILHIVE_ACCESS_TOKEN=
+```
+
 In development, open `/api/dev/yoruba-tts` to retrieve the benchmark phrases, selected voice, and instruction version. Send a benchmark phrase to `/api/chat/speech` with `{ "language": "yo", "text": "…" }` to compare audio. The benchmark still needs native-speaker scoring before a voice is treated as production-validated.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.

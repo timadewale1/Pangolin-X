@@ -185,7 +185,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   }, [farm?.state, farm?.lga, farm?.lat, farm?.lon, saveLocation]);
 
   useEffect(() => {
-    if (!user || !farm || farm.soil || farm.lat == null || farm.lon == null) return;
+    if (!user || !farm || (farm.soil && typeof farm.soil === "object" && (farm.soil as { source?: string }).source === "soilhive") || farm.lat == null || farm.lon == null) return;
     const requestKey = `${farm.lat.toFixed(4)}:${farm.lon.toFixed(4)}`;
     if (soilRequestFor.current === requestKey) return;
     soilRequestFor.current = requestKey;
@@ -193,7 +193,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Soil lookup unavailable")))
       .then(async (soil) => {
         const soilSummary = String(soil?.summary ?? soil?.classification?.wrb_class_name ?? soil?.classification?.soil_class_name ?? soil?.classification?.name ?? "").trim();
-        const savedSummary = soilSummary || "Location-based soil profile is ready; detailed soil properties are being refined.";
+        const savedSummary = soilSummary || "Your SoilHive location profile is ready; detailed soil properties are being refined.";
         await updateDoc(doc(db, "farmers", user.uid), { soil, soilSummary: savedSummary });
         setFarm((current) => current ? { ...current, soil, soilSummary: savedSummary } : current);
       })
