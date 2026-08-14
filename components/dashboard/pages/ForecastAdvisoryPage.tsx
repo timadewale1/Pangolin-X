@@ -42,6 +42,7 @@ export default function ForecastAdvisoryPage() {
             userId: user.uid,
             crops: farm.crops ?? [],
             weather: day,
+            forecast,
             lang: farm.language ?? lang ?? "en",
             cropStages,
             forecastDate: new Date(day.dt * 1000).toISOString(),
@@ -61,6 +62,8 @@ export default function ForecastAdvisoryPage() {
           advice: body,
           header: parsed?.header ?? "Forecast farm advice",
           details: parsed?.items ?? [],
+          intelligenceSummary: parsed?.intelligenceSummary,
+          noNovelInsight: parsed?.noNovelInsight === true,
           forecastWeather: day as unknown as Record<string, unknown>,
           crops: farm.crops ?? [],
         });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
 import { adminDB } from "@/lib/firebaseAdmin";
+import { highValueAdvisoryStandard } from "@/lib/farmIntelligence";
 
 export async function POST(request: Request) {
   try {
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
       temperature: 0.35,
       max_tokens: 500,
       messages: [
-        { role: "system", content: `You are the Pangolin-X farm assistant. Reply in ${language}. Use clear, practical language for this individual Nigerian farmer, not generic advice for farmers. Location: ${location}. Current crops and status: ${JSON.stringify({ crops: farm?.crops, cropStatus: farm?.cropStatus })}. Soil: ${farm?.soilSummary || "not available"}. Central farm intelligence memory: ${memory}. Continue from completed tasks, farmer observations, previous recommendations and current crop stages. Explain which farm detail makes your answer relevant. Do not repeat an old recommendation unless it is still urgent; provide the next useful observation, decision or action instead. Never invent weather, soil tests, government warnings, or prices. Encourage a qualified local professional for urgent crop, health, or safety issues.` },
+        { role: "system", content: `You are the Pangolin-X farm assistant. Reply in ${language}. Use clear, practical language for this individual Nigerian farmer, not generic advice for farmers. Location: ${location}. Current crops and status: ${JSON.stringify({ crops: farm?.crops, cropStatus: farm?.cropStatus })}. Soil: ${farm?.soilSummary || "not available"}. Central farm intelligence memory: ${memory}. ${highValueAdvisoryStandard()} Continue from completed tasks, farmer observations, previous recommendations and current crop stages. Explain which farm detail makes your answer relevant. Do not repeat an old recommendation unless it is still urgent; provide the next useful observation, decision or action instead. Never invent weather, soil tests, government warnings, or prices. When the farmer asks a general question without current evidence, be transparent about the missing data rather than manufacturing a farm-specific risk. Encourage a qualified local professional for urgent crop, health, or safety issues.` },
         ...(Array.isArray(history) ? history.slice(-8).map((item: { role?: string; text?: string }) => ({ role: item.role === "assistant" ? "assistant" as const : "user" as const, content: String(item.text ?? "") })) : []),
         { role: "user", content: imageDataUrl ? [{ type: "text", text: message.trim() }, { type: "image_url", image_url: { url: imageDataUrl } }] : message.trim() },
       ],

@@ -40,14 +40,29 @@ export default function AdvisoryRichContent({ advisory }: { advisory: AdvisoryRe
                 <p className="text-xs uppercase tracking-[0.24em] text-emerald-300">{item.crop}</p>
                 <h4 className="mt-2 text-xl font-semibold">{item.headline}</h4>
               </div>
-              <div className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${tone(item.riskLevel)}`}>
-                {item.riskLevel} risk / {item.confidence}% confidence
+              <div className={"rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] " + tone(item.riskLevel)}>
+                {item.riskLevel} risk / {item.confidenceLabel ?? (String(item.confidence) + "%")} confidence
               </div>
             </div>
           </div>
 
           <div className="p-5">
             <p className="text-sm leading-7 text-slate-700">{item.summary}</p>
+
+            {(item.decision || item.consequence || item.when || item.evidence?.length) ? (
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-[1.25rem] border border-emerald-200 bg-emerald-50/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Recommended decision</p>
+                  <p className="mt-2 text-sm leading-7 text-slate-700">{item.decision ?? "No change to the current plan is supported by the available data."}</p>
+                  {item.when ? <p className="mt-3 text-sm font-medium text-emerald-900">When: {item.when}</p> : null}
+                </div>
+                <div className="rounded-[1.25rem] border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">Evidence and consequence</p>
+                  <p className="mt-2 text-sm leading-7 text-slate-700">{item.consequence ?? "No material consequence is established from the available data."}</p>
+                  {item.evidence?.length ? <p className="mt-3 text-xs leading-5 text-slate-600">Evidence: {item.evidence.join(" · ")}</p> : null}
+                </div>
+              </div>
+            ) : null}
 
             {(item.operationalPosture || item.whyNow || item.expectedOutcome) ? (
               <div className="mt-4 grid gap-3 lg:grid-cols-3">

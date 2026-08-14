@@ -83,12 +83,19 @@ export default function CropDetailPage() {
           userId: user?.uid,
           crops: [cropId],
           weather,
+          forecast: weather?.daily ?? null,
           lang: farm.language ?? "en",
           cropStages: { [cropId]: { stage: status?.stage ?? "unknown", plantedAt: status?.plantedAt } },
           state: farm.state,
           lga: farm.lga,
           soilSummary: farm.soilSummary ?? null,
           soil: farm.soil ?? null,
+          weatherHistory: farm.weatherHistory ?? null,
+          irrigationHistory: farm.irrigationHistory ?? null,
+          inputApplications: farm.inputApplications ?? null,
+          fieldObservations: farm.fieldObservations ?? null,
+          vegetationIndices: farm.vegetationIndices ?? null,
+          marketSignals: farm.marketSignals ?? null,
           previousAdvice: advice,
         }),
       });
@@ -98,7 +105,7 @@ export default function CropDetailPage() {
       else if (json?.advice || json?.advisory) setAdvice(json.advice ?? json.advisory);
       else throw new Error("We could not prepare crop advice just now. Please try again shortly.");
       const savedAdvice = Array.isArray(json?.items) && json.items[0]?.advice ? json.items[0].advice : json?.advice ?? json?.advisory;
-      if (user && savedAdvice) await addCropAdvisory(user.uid, cropId, { header: json?.header ?? `Advice for ${cropId}`, advice: savedAdvice, crops: [cropId], weather: weather as unknown as Record<string, unknown>, details: json?.items });
+      if (user && savedAdvice) await addCropAdvisory(user.uid, cropId, { header: json?.header ?? `Advice for ${cropId}`, advice: savedAdvice, crops: [cropId], weather: weather as unknown as Record<string, unknown>, details: json?.items, intelligenceSummary: json?.intelligenceSummary, noNovelInsight: json?.noNovelInsight === true, advisoryContext: { cropStage: status, soil: farm.soil ?? null, forecast: weather?.daily ?? null } });
     } catch (error) {
       console.error("Unable to refresh crop advice", error);
       setAdviceError(error instanceof DOMException && error.name === "AbortError" ? "Advice is taking longer than usual. Please try again shortly." : error instanceof Error ? error.message : "Advice is temporarily unavailable. Please try again shortly.");

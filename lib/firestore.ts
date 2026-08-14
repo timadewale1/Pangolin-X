@@ -45,6 +45,9 @@ export interface AdvisoryData extends BaseAdvisoryData {
   advisory?: string;
   header?: string;
   details?: unknown;
+  intelligenceSummary?: string;
+  noNovelInsight?: boolean;
+  advisoryContext?: Record<string, unknown>;
 }
 
 // Forecast advisory with future date and recommendations
@@ -56,6 +59,8 @@ export interface ForecastAdvisoryData extends BaseAdvisoryData {
   advice: string;
   header?: string;
   details?: unknown;
+  intelligenceSummary?: string;
+  noNovelInsight?: boolean;
   
   // Original forecast weather data that was used
   forecastWeather: Record<string, unknown>;

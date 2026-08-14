@@ -53,13 +53,13 @@ export default function DashboardOverviewPage() {
     try {
       const cropStages = Object.fromEntries((farm.crops ?? []).map((crop) => [crop, { stage: farm.cropStatus?.[crop]?.stage ?? "unknown", plantedAt: farm.cropStatus?.[crop]?.plantedAt }]));
       const memory = await fetchFarmMemory(user.uid).catch(() => null);
-      const response = await fetch("/api/advice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, advisoryScope: "farm", crops: farm.crops ?? [], weather, lang: farm.language ?? lang, cropStages, state: farm.state, lga: farm.lga, soilSummary: farm.soilSummary ?? null, soil: farm.soil ?? null, previousAdvice: JSON.stringify(memory ?? latestAdvice?.text ?? "").slice(0, 12000) }) });
+      const response = await fetch("/api/advice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, advisoryScope: "farm", crops: farm.crops ?? [], weather, forecast: weather?.daily ?? null, lang: farm.language ?? lang, cropStages, state: farm.state, lga: farm.lga, soilSummary: farm.soilSummary ?? null, soil: farm.soil ?? null, weatherHistory: farm.weatherHistory ?? null, irrigationHistory: farm.irrigationHistory ?? null, inputApplications: farm.inputApplications ?? null, fieldObservations: farm.fieldObservations ?? null, vegetationIndices: farm.vegetationIndices ?? null, marketSignals: farm.marketSignals ?? null, previousAdvice: JSON.stringify(memory ?? latestAdvice?.text ?? "").slice(0, 12000) }) });
       const json = await response.json();
       if (!response.ok) throw new Error();
       const text = json?.executiveSummary ?? json?.advice ?? json?.advisory ?? "Your farm advice is ready.";
       const title = json?.header ?? "Today’s farm advice";
       setLatestAdvice({ title, text, createdAt: new Date().toISOString() });
-      await addAdvisory(user.uid, { header: title, advice: text, crops: farm.crops ?? [], weather: weather as unknown as Record<string, unknown>, details: json?.items });
+      await addAdvisory(user.uid, { header: title, advice: text, crops: farm.crops ?? [], weather: weather as unknown as Record<string, unknown>, details: json?.items, intelligenceSummary: json?.intelligenceSummary, noNovelInsight: json?.noNovelInsight === true, advisoryContext: { soil: farm.soil ?? null, cropStages, forecast: weather?.daily ?? null } });
       recent.push(now); localStorage.setItem(key, JSON.stringify(recent));
     } catch { setLatestAdvice({ title: "Advice unavailable", text: "We could not prepare a new farm advisory just now. Please try again shortly." }); }
     finally { setAdviceLoading(false); }

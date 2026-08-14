@@ -5,6 +5,7 @@ import { adminDB } from "@/lib/firebaseAdmin";
 import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
 import { getLanguageLabel } from "@/lib/language";
 import { takeDurableAdviceRequest } from "@/lib/adviceRateLimit";
+import { buildFarmIntelligence, highValueAdvisoryStandard } from "@/lib/farmIntelligence";
 
 export async function POST(req: Request) {
   try {
@@ -23,6 +24,19 @@ export async function POST(req: Request) {
     if (!crops || !weather || !body.state || !body.lga) {
       return NextResponse.json({ error: "Missing data (crops, weather, location)" }, { status: 400 });
     }
+    const intelligence = buildFarmIntelligence({
+      weather,
+      forecast: body.forecast,
+      soil: body.soil,
+      soilSummary: body.soilSummary,
+      cropStages,
+      weatherHistory: body.weatherHistory,
+      irrigationHistory: body.irrigationHistory,
+      inputApplications: body.inputApplications,
+      fieldObservations: body.fieldObservations,
+      vegetationIndices: body.vegetationIndices,
+      marketSignals: body.marketSignals,
+    });
     // The advisory service owns the long-term farm memory. It reads the farmer's
     // own previous advice, crop advice, fragility reports and chat notes instead
     // of relying on whichever screen made the request.
@@ -68,7 +82,7 @@ export async function POST(req: Request) {
       console.warn("adminDB soilTypes read failed:", error);
     }
 
-    let soilInfo = "Soil data not available";
+    let soilInfo = body.soil ? JSON.stringify(body.soil).slice(0, 4000) : "Soil data not available";
     if (soilData) {
       soilInfo = `Primary type: ${soilData.type}`;
       if (soilData.traits) {
@@ -107,6 +121,8 @@ Return ONLY valid JSON in this exact shape:
 {
   "header": "string",
   "generatedFor": "string",
+  "intelligenceSummary": "string",
+  "noNovelInsight": false,
   "executiveSummary": "string",
   "priorityWindow": "string",
   "regionalSignals": ["string", "string"],
@@ -115,8 +131,15 @@ Return ONLY valid JSON in this exact shape:
       "crop": "string",
       "headline": "string",
       "summary": "string",
+      "decision": "string",
+      "decisionType": "irrigate|fertilize|spray|harvest|plant|access|monitor|other",
+      "priority": 1,
       "riskLevel": "low|moderate|high",
       "confidence": 0,
+      "confidenceLabel": "high|medium|low",
+      "evidence": ["specific supplied observation"],
+      "consequence": "string",
+      "when": "string",
       "operationalPosture": "string",
       "whyNow": "string",
       "inputFocus": "string",
@@ -133,6 +156,12 @@ Return ONLY valid JSON in this exact shape:
 }
 
 Rules:
+- ${highValueAdvisoryStandard()}
+- Apply this mandatory high-value standard: identify only farm-specific, data-backed intelligence a knowledgeable farmer could not reliably infer unaided. Interpret evidence rather than repeating it, and structure each priority as observation, interpretation, consequence, decision, and timing.
+- Use all supplied signals together, but never turn missing weather history, satellite data, input records, irrigation records, market data, crop variety, soil tests, field zones, pests, diseases, rainfall totals, or thresholds into asserted facts.
+- Every item must name a clear decision, decision type, ranked priority, evidence, consequence, timing, and a high/medium/low confidence label. Return only one to three ranked decisions by urgency, impact, probability, reversibility, and evidence confidence.
+- If no material decision is supported, set noNovelInsight to true and return one item saying there is no material data-backed reason to change the current plan. Do not use generic advice to fill the response.
+- Use previous advice and farmer notes as continuity context. Advance the plan only when a changed condition, new evidence, follow-up check, or decision window supports it; never repeat a baseline action just because it is generally good practice.
 - Make the response feel premium, tactical, and decision-grade, not generic.
 - Write in clear farmer-friendly ${lang || "English"}.
 - "generatedFor" must address this individual farmer personally (for example, "Your maize field, 104 days after planting"), never a group such as "maize farmers".
@@ -140,9 +169,9 @@ Rules:
 - Novelty requirement: inspect the central intelligence memory before writing. Do not recycle an earlier drainage, pest, fertiliser or inspection paragraph. When weather and stage are similar, move the farmer forward with a measurable field check, escalation threshold, timing change, post-action verification, harvest-readiness checkpoint, or recorded observation.
 - ${farmRequest ? "This is a farm-wide request: return exactly one item named Farm-wide priorities. Its advice must cover the farm's daily operations, weather, soil, water, labour, field access and scouting. Do not write separate advice for individual crops." : "This is a crop advisory request: keep every item specific to its crop."}
 - Identify the most important action window in "priorityWindow".
-- "regionalSignals" should capture 2 to 4 short signals from weather, mobility, market, flood, pest, conflict, or input access context.
+- "regionalSignals" should capture only supplied or source-linked signals; do not infer pest, conflict, price, flood, or access events from missing data.
 - Every crop item must feel localized to ${body.lga}, ${body.state}.
-- Tie each crop recommendation to crop stage, weather, soil, and local risk context.
+- Tie each crop recommendation only to supplied crop stage, weather, forecast, soil, and local-risk context. If a field-specific variable is missing, say it was not measured rather than guessing.
 - "headline" should be a sharp one-line recommendation.
 - "summary" should be a concise but detailed explanation.
 - "operationalPosture" should say the practical stance to take for the crop today or this week.
@@ -150,8 +179,8 @@ Rules:
 - "inputFocus" should say what to do or avoid with fertilizer, chemicals, seed, irrigation, or labor.
 - "fieldAccess" should mention movement, access, drainage, or work-window realities.
 - "expectedOutcome" should briefly describe the benefit if the farmer follows the plan.
-- "actions" must contain 3 to 5 concrete next steps.
-- "watchouts" must contain 2 or 3 avoidable mistakes or threats.
+- "actions" must contain no more than 3 concrete, decision-linked next steps.
+- "watchouts" must contain no more than 2 avoidable mistakes or threats, only where evidence supports them.
 - "timing" must say when to act today / this week.
 - "marketIntel" should mention any relevant local supply, movement, pest, flood, conflict, or input-access signal. If nothing strong exists, say so briefly.
 - "sourceTags" should be short labels like Weather, Soil, News, NiMet, NEMA, NIHSA, Local context.
@@ -161,6 +190,10 @@ Rules:
 - Do not include markdown or any text outside the JSON.
 
 Context:
+- Derived farm intelligence: ${JSON.stringify(intelligence)}
+- Raw weather payload: ${JSON.stringify(weather).slice(0, 8000)}
+- Forecast payload when supplied: ${JSON.stringify(body.forecast ?? null).slice(0, 8000)}
+- Farmer records when supplied: ${JSON.stringify({ irrigationHistory: body.irrigationHistory ?? null, inputApplications: body.inputApplications ?? null, fieldObservations: body.fieldObservations ?? null, vegetationIndices: body.vegetationIndices ?? null, marketSignals: body.marketSignals ?? null }).slice(0, 8000)}
 - Crops: ${crops.join(", ")}
 - Crop stages and planting dates: ${crops.map((crop) => `${crop}: stage=${cropStages?.[crop]?.stage || "unknown"}, planted=${cropStages?.[crop]?.plantedAt || "not recorded"}`).join("; ")}
 - Farmer profile: ${farmerProfile}
@@ -176,22 +209,24 @@ ${newsSummary}`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
       messages: [{ role: "user", content: prompt }],
       temperature: 0.35,
       max_tokens: farmRequest ? 2200 : singleCropRequest ? 2200 : 2600,
     }, { timeout: 55_000 });
 
     const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
-    const jsonMatch = text.match(/\{[\s\S]*\}$/m);
-    const parsedPayload = parseAdvisoryPayload(JSON.parse(jsonMatch ? jsonMatch[0] : text));
+    const parsedPayload = parseAdvisoryPayload(JSON.parse(text));
     if (!parsedPayload) {
       return NextResponse.json({ error: "We could not produce a reliable advisory from the available farm information. Please try again after a few minutes." }, { status: 502 });
     }
     const advisory = parsedPayload;
     const normalized = {
       ...advisory,
-      items: advisory.items.map((item) => ({
+      items: advisory.items.slice(0, farmRequest ? 1 : 3).map((item, index) => ({
         ...item,
+        priority: item.priority ?? ((index + 1) as 1 | 2 | 3),
+        confidenceLabel: item.confidenceLabel ?? (item.confidence >= 80 ? "high" : item.confidence >= 60 ? "medium" : "low"),
         advice: item.advice || `${item.headline} ${item.summary}`.trim(),
       })),
     };

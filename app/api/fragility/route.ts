@@ -5,6 +5,7 @@ import { getNigeriaZone, NIGERIA_ZONE_ORDER } from "@/lib/nigeria-zones";
 import type { FragilityReport, FragilitySource } from "@/lib/dashboard-types";
 import { getLanguageLabel } from "@/lib/language";
 import { takeDurableAdviceRequest } from "@/lib/adviceRateLimit";
+import { highValueAdvisoryStandard } from "@/lib/farmIntelligence";
 
 function clampScore(input: unknown, fallback: number) {
   const value = Number(input);
@@ -20,26 +21,19 @@ function severityFromScore(score: number): "low" | "moderate" | "high" {
 
 function fallbackReport(body: { lga?: string | null; state?: string | null }, sources: FragilitySource[]): FragilityReport {
   const zone = getNigeriaZone(body.state);
-  const scores = {
-    flood: sources.length > 0 ? 54 : 32,
-    conflict: sources.length > 0 ? 61 : 40,
-    infrastructure: sources.length > 0 ? 48 : 35,
-    health: sources.length > 0 ? 36 : 28,
-    climate: sources.length > 0 ? 58 : 42,
-  };
+  const scores = { flood: 0, conflict: 0, infrastructure: 0, health: 0, climate: 0 };
   const overallScore = Math.round((scores.flood + scores.conflict + scores.infrastructure + scores.health + scores.climate) / 5);
 
   return {
     header: `Fragility outlook for ${body.lga ?? "target community"}`,
     generatedAt: new Date().toISOString(),
     location: { lga: body.lga ?? null, state: body.state ?? null, zone },
-    overallScore,
-    confidence: sources.length > 0 ? 72 : 48,
-    recommendedChannels: overallScore >= 65 ? ["WhatsApp", "SMS", "Voice"] : ["WhatsApp", "SMS"],
+    overallScore: 0,
+    confidence: 0,
+    recommendedChannels: [],
     scores,
     zoneScores: NIGERIA_ZONE_ORDER.map((zoneName, index) => {
-      const base = overallScore + (index % 2 === 0 ? 6 : -5);
-      const score = zoneName === zone ? overallScore : Math.max(18, Math.min(92, base));
+      const score = 0;
       return {
         zone: zoneName,
         score,
@@ -50,32 +44,32 @@ function fallbackReport(body: { lga?: string | null; state?: string | null }, so
     sections: [
       {
         title: "Flood / Drought Risk",
-        summary: sources.length > 0 ? "Recent signals suggest weather-linked volatility. Keep field movement and input timing flexible." : "No strong local signal was captured, but climate variability still warrants weekly monitoring.",
-        severity: severityFromScore(scores.flood),
+        summary: "No verified, decision-grade local flood or drought signal is available in this report. Pangolin-X will not infer a risk level without traceable evidence; refresh when a relevant weather or institutional update is available.",
+        severity: "low",
         score: scores.flood,
-        trend: "rising",
-        sourceRefs: sources.slice(0, 2).map((source) => source.id),
+        trend: "stable",
+        sourceRefs: [],
       },
       {
         title: "Conflict / Displacement",
-        summary: "Conflict exposure should be monitored alongside climate conditions before movement, aggregation, or planting decisions.",
-        severity: severityFromScore(scores.conflict),
+        summary: "No verified, decision-grade local conflict or displacement signal is available in this report. Pangolin-X will not infer an access risk from general regional conditions.",
+        severity: "low",
         score: scores.conflict,
         trend: "stable",
-        sourceRefs: sources.slice(0, 2).map((source) => source.id),
+        sourceRefs: [],
       },
       {
         title: "Infrastructure / Market Access",
-        summary: "Road access, market continuity, and logistics resilience may become bottlenecks during elevated local stress periods.",
-        severity: severityFromScore(scores.infrastructure),
+        summary: "No verified, decision-grade local infrastructure or market-access disruption signal is available in this report. There is no data-based reason here to change planned movement or marketing activity.",
+        severity: "low",
         score: scores.infrastructure,
         trend: "stable",
         sourceRefs: sources.slice(0, 2).map((source) => source.id),
       },
       {
         title: "Health / Disease Outbreaks",
-        summary: "Health-related disruption is presently moderate, but trusted local reporting should continue to be monitored.",
-        severity: severityFromScore(scores.health),
+        summary: "No verified, decision-grade local health disruption signal is available in this report. Pangolin-X is preserving this as a no-material-signal result rather than fabricating an advisory.",
+        severity: "low",
         score: scores.health,
         trend: "falling",
         sourceRefs: sources.slice(0, 2).map((source) => source.id),
@@ -146,6 +140,9 @@ export async function POST(req: Request) {
 }
 
 Constraints:
+- ${highValueAdvisoryStandard()}
+- A listed institutional source is not itself evidence of a local incident. If no source supports a material local signal, return low scores, stable trends, a clear no-material-signal summary, and no generic contingency checklist.
+- Rank the most material local risk first. Scores are confidence-weighted decision-support estimates, not measured incidence. Use only source ids that directly support the section.
 - Scores must be integers from 0 to 100.
 - Write for the individual farmer in ${lang}, directly using "you" rather than "farmers should". Each section summary must be a concrete 120–180 word response plan: explain the local signal, what it could mean for this farm, what to do this week, what to avoid, and what to monitor. Do not invent evidence that is not listed.
 - Prioritize source traceability by referencing only these source ids: ${sources.map((source) => source.id).join(", ")}.
@@ -162,6 +159,7 @@ ${sources
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
       max_tokens: 900,

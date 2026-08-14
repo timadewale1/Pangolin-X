@@ -62,12 +62,19 @@ export default function AdvisoriesPage() {
           userId: user.uid,
           crops: farm.crops ?? [],
           weather,
+          forecast: weather?.daily ?? null,
           lang: farm.language ?? "en",
           cropStages,
           state: farm.state,
           lga: farm.lga,
           soilSummary: farm.soilSummary ?? null,
           soil: farm.soil ?? null,
+          weatherHistory: farm.weatherHistory ?? null,
+          irrigationHistory: farm.irrigationHistory ?? null,
+          inputApplications: farm.inputApplications ?? null,
+          fieldObservations: farm.fieldObservations ?? null,
+          vegetationIndices: farm.vegetationIndices ?? null,
+          marketSignals: farm.marketSignals ?? null,
         }),
       });
       const advisoryJson = await advisoryResponse.json();
@@ -80,6 +87,9 @@ export default function AdvisoriesPage() {
         details: parsed?.items,
         crops: farm.crops ?? [],
         weather,
+        intelligenceSummary: parsed?.intelligenceSummary,
+        noNovelInsight: parsed?.noNovelInsight === true,
+        advisoryContext: { cropStages, soil: farm.soil ?? null, forecast: weather?.daily ?? null },
       });
       await loadAdvisories();
     } catch (error) {

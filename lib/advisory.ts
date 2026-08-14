@@ -27,6 +27,8 @@ export function parseAdvisoryPayload(payload: unknown): AdvisoryResponse | null 
     executiveSummary?: unknown;
     priorityWindow?: unknown;
     regionalSignals?: unknown;
+    intelligenceSummary?: unknown;
+    noNovelInsight?: unknown;
     items?: unknown[];
   };
   if (!Array.isArray(candidate.items) || candidate.items.length === 0) return null;
@@ -57,6 +59,17 @@ export function parseAdvisoryPayload(payload: unknown): AdvisoryResponse | null 
         marketIntel: String(source.marketIntel ?? "").trim() || undefined,
         sourceTags: toStringArray(source.sourceTags),
         advice: advice || `${headline}\n${summary}`,
+        decision: String(source.decision ?? "").trim() || undefined,
+        decisionType: ["irrigate", "fertilize", "spray", "harvest", "plant", "access", "monitor", "other"].includes(String(source.decisionType))
+          ? String(source.decisionType) as AdvisoryDetail["decisionType"]
+          : undefined,
+        priority: [1, 2, 3].includes(Number(source.priority)) ? Number(source.priority) as 1 | 2 | 3 : undefined,
+        confidenceLabel: ["high", "medium", "low"].includes(String(source.confidenceLabel))
+          ? String(source.confidenceLabel) as AdvisoryDetail["confidenceLabel"]
+          : undefined,
+        evidence: toStringArray(source.evidence),
+        consequence: String(source.consequence ?? "").trim() || undefined,
+        when: String(source.when ?? "").trim() || undefined,
       };
     })
     .filter((item): item is AdvisoryDetail => item !== null);
@@ -70,6 +83,8 @@ export function parseAdvisoryPayload(payload: unknown): AdvisoryResponse | null 
     priorityWindow: String(candidate.priorityWindow ?? "").trim() || undefined,
     regionalSignals: toStringArray(candidate.regionalSignals),
     items,
+    noNovelInsight: candidate.noNovelInsight === true,
+    intelligenceSummary: String(candidate.intelligenceSummary ?? "").trim() || undefined,
   };
 }
 
@@ -77,12 +92,17 @@ export function renderAdvisoryText(response: AdvisoryResponse) {
   return [
     response.header,
     response.executiveSummary ? `Executive Summary: ${response.executiveSummary}` : null,
+    response.intelligenceSummary ? `Intelligence summary: ${response.intelligenceSummary}` : null,
     response.priorityWindow ? `Priority Window: ${response.priorityWindow}` : null,
     response.regionalSignals?.length ? `Regional Signals: ${response.regionalSignals.join("; ")}` : null,
     ...response.items.map((item, index) =>
       [
         `${index + 1}. ${item.crop.toUpperCase()} - ${item.headline}`,
         `Summary: ${item.summary}`,
+        item.decision ? `Decision: ${item.decision}` : null,
+        item.consequence ? `Consequence: ${item.consequence}` : null,
+        item.when ? `When: ${item.when}` : null,
+        item.evidence?.length ? `Evidence: ${item.evidence.join("; ")}` : null,
         item.operationalPosture ? `Operational Posture: ${item.operationalPosture}` : null,
         item.whyNow ? `Why Now: ${item.whyNow}` : null,
         item.inputFocus ? `Input Focus: ${item.inputFocus}` : null,

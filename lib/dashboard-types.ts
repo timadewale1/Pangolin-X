@@ -18,6 +18,12 @@ export type FarmerDoc = {
   accessCodeUsed?: boolean;
   soil?: unknown;
   soilSummary?: string | null;
+  weatherHistory?: unknown;
+  irrigationHistory?: unknown;
+  inputApplications?: unknown;
+  fieldObservations?: unknown;
+  vegetationIndices?: unknown;
+  marketSignals?: unknown;
   plan?: string | null;
   paidAccess?: boolean;
   paymentDate?: string | null;
@@ -46,6 +52,7 @@ export type WeatherData = {
   timezone?: string;
   lat?: number;
   lon?: number;
+  daily?: unknown[];
 };
 
 export type ForecastDay = {
@@ -94,6 +101,13 @@ export type AdvisoryDetail = {
   marketIntel?: string;
   sourceTags: string[];
   advice: string;
+  decision?: string;
+  decisionType?: "irrigate" | "fertilize" | "spray" | "harvest" | "plant" | "access" | "monitor" | "other";
+  priority?: 1 | 2 | 3;
+  confidenceLabel?: "high" | "medium" | "low";
+  evidence?: string[];
+  consequence?: string;
+  when?: string;
 };
 
 export type AdvisoryResponse = {
@@ -103,6 +117,8 @@ export type AdvisoryResponse = {
   priorityWindow?: string;
   regionalSignals?: string[];
   items: AdvisoryDetail[];
+  noNovelInsight?: boolean;
+  intelligenceSummary?: string;
 };
 
 export type FragilitySource = {
