@@ -296,7 +296,7 @@ Rules:
 - "timing" must say when to act today / this week.
 - "marketIntel" should mention any relevant local supply, movement, pest, flood, conflict, or input-access signal. If nothing strong exists, say so briefly.
 - "sourceTags" should be short labels like Weather, Soil, News, NiMet, NEMA, NIHSA, Local context.
-- ${singleCropRequest ? '"advice" must be a detailed 350–500 word briefing for this crop.' : 'For each crop, make "advice" a focused 140–220 word briefing so the complete response remains reliable.'} Use labelled paragraphs or bullets covering weather impact, soil impact, exact work now, field inspection, input/water guidance, pest/disease signs, and what to avoid. Never say "farmers should"; address the farmer as "you".
+- ${singleCropRequest ? '"advice" must be a detailed 220–320 word decision briefing for this crop.' : 'For each crop, make "advice" a focused 120–200 word decision briefing.'} Use only these labelled sections: Insight, Why it matters, Recommended decision, When, and Confidence. Include a section only when it is supported by supplied evidence. Never say "farmers should"; address the farmer as "you".
 - The executiveSummary must be 180–260 words and be a detailed plan for this farmer's whole farm, not a restatement of crop items. It must address the farmer directly as "you".
 - Confidence should be an integer between 45 and 95.
 - Do not include markdown or any text outside the JSON.
