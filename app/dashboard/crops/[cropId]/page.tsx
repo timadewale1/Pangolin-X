@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CloudSun, Droplet, Save, Sprout, Thermometer } from "lucide-react";
+import { ArrowLeft, CloudSun, Droplet, Save, Sprout, Thermometer, Volume2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useDashboard } from "@/context/DashboardContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -106,6 +106,7 @@ export default function CropDetailPage() {
       setLoading(false);
     }
   }, [farm, weather, cropId, status?.stage, status?.plantedAt, t, user]);
+  const speakAdvice = useCallback(async () => { if (!advice) return; const response = await fetch("/api/chat/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: advice }) }); if (response.ok) new Audio(URL.createObjectURL(await response.blob())).play().catch(() => undefined); }, [advice]);
 
   useEffect(() => {
     if (!user) return;
@@ -143,7 +144,7 @@ export default function CropDetailPage() {
       </Link>
 
       <section className="farm-card border-[#b9ddc3] bg-[#f8fcf8] p-5 md:p-7">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="eyebrow">{t("ai_crop_recommendation") ?? "AI crop advice"}</p><h2 className="mt-2 text-2xl font-bold tracking-[-.035em] text-[#183127]">Advice for {crop?.label ?? "this crop"}</h2></div><button onClick={refreshAdvice} disabled={loading} className="action-primary disabled:opacity-60">{t("refresh") ?? "Refresh advice"}</button></div>
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="eyebrow">{t("ai_crop_recommendation") ?? "AI crop advice"}</p><h2 className="mt-2 text-2xl font-bold tracking-[-.035em] text-[#183127]">Advice for {crop?.label ?? "this crop"}</h2></div><div className="flex flex-wrap gap-2"><button onClick={() => void speakAdvice()} disabled={!advice} className="inline-flex items-center gap-2 rounded-xl border border-[#a9d9b9] bg-[#eaf8ee] px-4 py-2.5 text-sm font-bold text-[#087a3d] disabled:opacity-50"><Volume2 className="h-4 w-4" />Listen</button><button onClick={refreshAdvice} disabled={loading} className="action-primary disabled:opacity-60">{t("refresh") ?? "Refresh advice"}</button></div></div>
         <div className="mt-5 whitespace-pre-line text-[15px] leading-7 text-[#34473a]">{adviceError ? <p className="rounded-xl bg-[#fff4e8] p-4 text-[#8a4b12]">{adviceError}</p> : loading ? <div className="flex min-h-20 items-center"><Loader /></div> : advice || <p className="text-[#617067]">Select Refresh advice to generate a current recommendation for this crop.</p>}</div>
       </section>
 

@@ -18,6 +18,8 @@ export async function POST(req: Request) {
     const weather = body.weather;
     const lang = getLanguageLabel(body.lang);
     const cropStages: Record<string, { stage?: string }> | undefined = body.cropStages;
+    const singleCropRequest = crops.length === 1;
+    const farmRequest = body.advisoryScope === "farm";
     if (!crops || !weather || !body.state || !body.lga) {
       return NextResponse.json({ error: "Missing data (crops, weather, location)" }, { status: 400 });
     }
@@ -131,6 +133,7 @@ Rules:
 - Make the response feel premium, tactical, and decision-grade, not generic.
 - Write in clear farmer-friendly ${lang || "English"}.
 - Open with a concise executive summary for the whole farm, not just crop-by-crop notes.
+- ${farmRequest ? "This is a farm-wide request: return exactly one item named Farm-wide priorities. Its advice must cover the farm's daily operations, weather, soil, water, labour, field access and scouting. Do not write separate advice for individual crops." : "This is a crop advisory request: keep every item specific to its crop."}
 - Identify the most important action window in "priorityWindow".
 - "regionalSignals" should capture 2 to 4 short signals from weather, mobility, market, flood, pest, conflict, or input access context.
 - Every crop item must feel localized to ${body.lga}, ${body.state}.
@@ -147,7 +150,7 @@ Rules:
 - "timing" must say when to act today / this week.
 - "marketIntel" should mention any relevant local supply, movement, pest, flood, conflict, or input-access signal. If nothing strong exists, say so briefly.
 - "sourceTags" should be short labels like Weather, Soil, News, NiMet, NEMA, NIHSA, Local context.
-- "advice" must be a detailed, practical farmer briefing of 350–550 words for that specific crop. Use short labelled paragraphs or bullets covering: what the current weather means, how the saved soil context affects the decision, exact work to do now, what to inspect in the field, input/water guidance, pest/disease signs to look for, and what to avoid. Do not use generic wording such as "farmers should". Address the farmer directly as "you" and name the crop, crop stage, LGA and state where helpful.
+- ${singleCropRequest ? '"advice" must be a detailed 350–500 word briefing for this crop.' : 'For each crop, make "advice" a focused 140–220 word briefing so the complete response remains reliable.'} Use labelled paragraphs or bullets covering weather impact, soil impact, exact work now, field inspection, input/water guidance, pest/disease signs, and what to avoid. Never say "farmers should"; address the farmer as "you".
 - The executiveSummary must be 180–260 words and be a detailed plan for this farmer's whole farm, not a restatement of crop items. It must address the farmer directly as "you".
 - Confidence should be an integer between 45 and 95.
 - Do not include markdown or any text outside the JSON.
@@ -169,8 +172,8 @@ ${newsSummary}`;
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.35,
-      max_tokens: 1300,
-    }, { timeout: 30_000 });
+      max_tokens: farmRequest ? 2200 : singleCropRequest ? 2200 : 2600,
+    }, { timeout: 55_000 });
 
     const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
     const jsonMatch = text.match(/\{[\s\S]*\}$/m);
@@ -193,6 +196,6 @@ ${newsSummary}`;
     });
   } catch (error) {
     console.error("AI Advisory Error:", error);
-    return NextResponse.json({ error: "Failed to fetch AI advice" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error && /timeout|timed out/i.test(error.message) ? "Advice is taking longer than usual. Please try again shortly." : "Farm advice is temporarily unavailable. Please try again shortly." }, { status: 503 });
   }
 }

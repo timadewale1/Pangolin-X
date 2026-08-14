@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CloudRain, Droplets, Leaf, MapPin, RefreshCw, ShieldAlert, Sprout, ThermometerSun, Wind } from "lucide-react";
+import { ArrowRight, CloudRain, Droplets, Leaf, MapPin, RefreshCw, ShieldAlert, Sprout, ThermometerSun, Volume2, Wind } from "lucide-react";
 import { useDashboard } from "@/context/DashboardContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getCropImage, getCropOption } from "@/lib/crops";
@@ -27,7 +27,7 @@ export default function DashboardOverviewPage() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [latestAdvice, setLatestAdvice] = useState<{ title: string; text: string; createdAt?: unknown } | null>(null);
   const [cropAdvice, setCropAdvice] = useState<Record<string, string>>({});
-  const [risk, setRisk] = useState<{ title: string; text: string; severity?: string } | null>(null);
+  const [risk, setRisk] = useState<{ title: string; text: string; severity?: string; topic?: string } | null>(null);
   const [weatherError, setWeatherError] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [adviceLoading, setAdviceLoading] = useState(false);
@@ -51,7 +51,7 @@ export default function DashboardOverviewPage() {
     try {
       const cropStages = Object.fromEntries((farm.crops ?? []).map((crop) => [crop, { stage: farm.cropStatus?.[crop]?.stage ?? "unknown", plantedAt: farm.cropStatus?.[crop]?.plantedAt }]));
       const memory = await fetchFarmMemory(user.uid).catch(() => null);
-      const response = await fetch("/api/advice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, crops: farm.crops ?? [], weather, lang: farm.language ?? lang, cropStages, state: farm.state, lga: farm.lga, soilSummary: farm.soilSummary ?? null, soil: farm.soil ?? null, previousAdvice: JSON.stringify(memory ?? latestAdvice?.text ?? "").slice(0, 12000) }) });
+      const response = await fetch("/api/advice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, advisoryScope: "farm", crops: farm.crops ?? [], weather, lang: farm.language ?? lang, cropStages, state: farm.state, lga: farm.lga, soilSummary: farm.soilSummary ?? null, soil: farm.soil ?? null, previousAdvice: JSON.stringify(memory ?? latestAdvice?.text ?? "").slice(0, 12000) }) });
       const json = await response.json();
       if (!response.ok) throw new Error();
       const text = json?.executiveSummary ?? json?.advice ?? json?.advisory ?? "Your farm advice is ready.";
@@ -62,6 +62,7 @@ export default function DashboardOverviewPage() {
     } catch { setLatestAdvice({ title: "Advice unavailable", text: "We could not prepare a new farm advisory just now. Please try again shortly." }); }
     finally { setAdviceLoading(false); }
   }, [adviceLoading, farm, lang, subscriptionActive, user, weather]);
+  const speakAdvice = useCallback(async (text: string) => { const response = await fetch("/api/chat/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }); if (response.ok) new Audio(URL.createObjectURL(await response.blob())).play().catch(() => undefined); }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -69,18 +70,18 @@ export default function DashboardOverviewPage() {
     if (!sessionStorage.getItem(fragilitySessionKey) && farm?.state && farm?.lga) {
       fetch("/api/fragility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, state: farm.state, lga: farm.lga, lang }) })
         .then((response) => response.ok ? response.json() : null)
-        .then(async (fresh) => { if (fresh?.sections?.[0]) { setRisk({ title: fresh.header ?? t("risk_to_watch"), text: fresh.sections[0].summary ?? "", severity: fresh.sections[0].severity }); await addFragilityAdvisory(user.uid, { header: fresh.header, sections: fresh.sections, weather: null, report: fresh }); sessionStorage.setItem(fragilitySessionKey, "ready"); } })
+        .then(async (fresh) => { if (fresh?.sections?.[0]) { setRisk({ title: fresh.header ?? t("risk_to_watch"), topic: fresh.sections[0].title, text: fresh.sections[0].summary ?? "", severity: fresh.sections[0].severity }); await addFragilityAdvisory(user.uid, { header: fresh.header, sections: fresh.sections, weather: null, report: fresh }); sessionStorage.setItem(fragilitySessionKey, "ready"); } })
         .catch(() => undefined);
       return;
     }
     Promise.all([fetchAdvisories(user.uid, 1), fetchFragilityAdvisories(user.uid, 1)]).then(([advisories, reports]) => {
       const advisory = advisories[0] as { header?: string; advice?: string; advisory?: string; createdAt?: unknown; details?: Array<{ crop?: string; advice?: string; summary?: string }> } | undefined;
-      const report = reports[0] as { header?: string; sections?: Array<{ summary?: string; severity?: string }>; report?: { header?: string; sections?: Array<{ summary?: string; severity?: string }> } } | undefined;
+      const report = reports[0] as { header?: string; sections?: Array<{ title?: string; summary?: string; severity?: string }>; report?: { header?: string; sections?: Array<{ title?: string; summary?: string; severity?: string }> } } | undefined;
       const currentReport = report?.report ?? report;
       if (advisory) setLatestAdvice({ title: advisory.header ?? t("advice_for_farm"), text: advisory.advice ?? advisory.advisory ?? "", createdAt: advisory.createdAt });
       if (advisory?.details) setCropAdvice(Object.fromEntries(advisory.details.filter((item) => item.crop).map((item) => [String(item.crop), item.advice ?? item.summary ?? ""])));
-      if (currentReport?.sections?.length) setRisk({ title: currentReport.header ?? t("risk_to_watch"), text: currentReport.sections[0]?.summary ?? "", severity: currentReport.sections[0]?.severity });
-      else if (farm?.state && farm?.lga) fetch("/api/fragility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user?.uid, state: farm.state, lga: farm.lga, lang }) }).then((response) => response.ok ? response.json() : null).then(async (fresh) => { if (fresh?.sections?.[0]) { setRisk({ title: fresh.header ?? t("risk_to_watch"), text: fresh.sections[0].summary ?? "", severity: fresh.sections[0].severity }); if (user) await addFragilityAdvisory(user.uid, { header: fresh.header, sections: fresh.sections, weather: null, report: fresh }); } }).catch(() => undefined);
+      if (currentReport?.sections?.length) setRisk({ title: currentReport.header ?? t("risk_to_watch"), topic: currentReport.sections[0]?.title, text: currentReport.sections[0]?.summary ?? "", severity: currentReport.sections[0]?.severity });
+      else if (farm?.state && farm?.lga) fetch("/api/fragility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user?.uid, state: farm.state, lga: farm.lga, lang }) }).then((response) => response.ok ? response.json() : null).then(async (fresh) => { if (fresh?.sections?.[0]) { setRisk({ title: fresh.header ?? t("risk_to_watch"), topic: fresh.sections[0].title, text: fresh.sections[0].summary ?? "", severity: fresh.sections[0].severity }); if (user) await addFragilityAdvisory(user.uid, { header: fresh.header, sections: fresh.sections, weather: null, report: fresh }); } }).catch(() => undefined);
     }).catch((error) => console.error("Unable to load farm summaries", error));
   }, [farm?.lga, farm?.state, lang, user, t]);
   useEffect(() => { if (!latestAdvice?.text || lang === "en") return; fetch("/api/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: latestAdvice.text, lang }) }).then((r) => r.ok ? r.json() : null).then((data) => { if (data?.text) setLatestAdvice((current) => current ? { ...current, text: data.text } : current); }).catch(() => undefined); }, [lang]);
@@ -114,7 +115,7 @@ export default function DashboardOverviewPage() {
     <section className="grid gap-4 md:grid-cols-3">
       <OverviewMetric icon={Leaf} label={t("active_crops")} value={String(crops.length)} />
       <OverviewMetric icon={Sprout} label={t("soil_condition")} value={soil.label} />
-      <OverviewMetric icon={ShieldAlert} label={t("risk_to_watch")} value={risk?.severity ? `${risk.severity[0].toUpperCase()}${risk.severity.slice(1)}` : "Review"} />
+      <div className="farm-card p-5"><ShieldAlert className="h-5 w-5 text-[#0b9a49]" /><p className="mt-5 metric-label">{t("risk_to_watch")}</p><p className="mt-2 truncate text-xl font-bold tracking-[-.04em] text-[#183127]">{risk?.topic ?? "Review local risks"}</p><p className="mt-1 text-sm font-semibold capitalize text-[#617067]">{risk?.severity ?? "Checking"} risk</p><Link href="/dashboard/fragility" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-[#087a3d]">View report <ArrowRight className="h-4 w-4" /></Link></div>
     </section>
 
     <section className="grid gap-5 xl:grid-cols-[1.3fr_.7fr]">
@@ -122,6 +123,7 @@ export default function DashboardOverviewPage() {
         {crops.length ? <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{crops.slice(0, 6).map(({ id, option, growth }) => <article key={id} className="rounded-xl border border-[#dce3d9] p-3"><div className="flex gap-3"><Image src={getCropImage(id)} alt={option?.label ?? id} width={66} height={66} className="h-[66px] w-[66px] rounded-lg object-cover" /><div className="min-w-0 flex-1"><p className="font-bold text-[#183127]">{option?.label ?? id}</p><p className="mt-1 text-xs text-[#617067]">{growth.phaseLabel} · {growth.daysPlanted ?? 0} days</p><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e3e8df]"><div className="h-full bg-[#16A34A]" style={{ width: `${growth.progress}%` }} /></div></div></div><p className="mt-3 line-clamp-2 text-sm leading-6 text-[#617067]">{cropAdvice[id] || "Open this crop to view its advice."}</p><Link href={`/dashboard/crops/${id}`} className="mt-3 inline-flex text-sm font-bold text-[#16A34A]">View {option?.label ?? id} advice <ArrowRight className="ml-2 h-4 w-4" /></Link></article>)}</div> : <EmptyPanel title="No crops added yet" text="Add the crops growing on your farm so your advice can be more useful." href="/dashboard/crops" action="Add crops" />}</div>
       <div className="farm-card p-5 md:p-6 xl:col-span-2"><div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Advice for your farm</p><h2 className="mt-2 text-xl font-bold tracking-[-.03em] text-[#183127]">What to do next</h2></div><CloudRain className="h-5 w-5 text-[#0b8f45]" /></div>{latestAdvice ? <><p className="mt-5 text-base font-bold leading-6 text-[#183127]">{latestAdvice.title}</p><p className="mt-2 whitespace-pre-line text-sm leading-7 text-[#617067]">{latestAdvice.text}</p><p className="mt-4 text-xs text-[#829087]">Updated {dateLabel(latestAdvice.createdAt)}</p></> : <p className="mt-5 text-sm leading-6 text-[#617067]">Get a fresh, practical plan for today&apos;s farm work whenever you are ready.</p>}<button onClick={() => void refreshFarmAdvice()} disabled={!canGetAdvice} className="action-primary mt-5 disabled:cursor-not-allowed disabled:opacity-50">{adviceLoading ? "Preparing advice…" : "Get new advice"}</button>{risk ? <div className="mt-6 rounded-2xl border border-[#eadfb8] bg-[#fffdf4] p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#8a6a16]">Fragility advice</p><Link href="/dashboard/fragility" className="text-sm font-bold text-[#28533b]">View report</Link></div><p className="mt-3 text-sm leading-6 text-[#4a4d38]">{risk.text}</p></div> : null}{!subscriptionActive ? <p className="mt-3 text-sm text-[#a2423b]">Renew your subscription to receive fresh farm advice.</p> : !hasFarmArea ? <p className="mt-3 text-sm text-[#617067]">Add your state and local government area in Settings to get tailored advice.</p> : !weather ? <p className="mt-3 text-sm text-[#617067]">We are preparing your local weather before advice can be generated.</p> : !crops.length ? <p className="mt-3 text-sm text-[#617067]">Add at least one crop before requesting farm advice.</p> : null}</div>
     </section>
+    {latestAdvice ? <div className="flex justify-start"><button onClick={() => void speakAdvice(latestAdvice.text)} className="inline-flex items-center gap-2 rounded-xl border border-[#a9d9b9] bg-[#eaf8ee] px-4 py-3 text-sm font-bold text-[#087a3d]"><Volume2 className="h-5 w-5" />Listen to today&apos;s farm advice</button></div> : null}
   </div>;
 }
 
