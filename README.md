@@ -16,6 +16,21 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Yoruba speech quality
+
+Yoruba playback is routed through a dedicated Standard Nigerian Yoruba profile in `lib/yorubaTts.ts`. It preserves tone marks and Yoruba vowels, uses a configurable compact pronunciation/prosody instruction, and keeps an in-memory server cache for repeated audio.
+
+Optional server configuration:
+
+```bash
+YORUBA_TTS_ENABLED=true
+YORUBA_TTS_VOICE=coral
+YORUBA_TTS_INSTRUCTION_VERSION=sny-v1
+DEFAULT_TTS_VOICE=coral
+```
+
+In development, open `/api/dev/yoruba-tts` to retrieve the benchmark phrases, selected voice, and instruction version. Send a benchmark phrase to `/api/chat/speech` with `{ "language": "yo", "text": "…" }` to compare audio. The benchmark still needs native-speaker scoring before a voice is treated as production-validated.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
