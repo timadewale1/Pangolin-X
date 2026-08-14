@@ -147,6 +147,15 @@ export async function fetchFragilityAdvisoriesPage(uid: string, count: number = 
   return { items, lastCursor, hasMore: snap.docs.length === count };
 }
 
+export async function fetchFarmMemory(uid: string) {
+  const read = async (name: string) => {
+    const snap = await getDocs(query(collection(db, "farmers", uid, name), orderBy("createdAt", "desc"), limit(6)));
+    return snap.docs.map((item) => item.data());
+  };
+  const [advisories, crops, fragility, notes] = await Promise.all([read("advisories"), read("cropAdvisories"), read("fragility"), read("farmNotes")]);
+  return { advisories, crops, fragility, notes };
+}
+
 // Update crop list for a farmer
 export async function updateFarmerCrops(uid: string, crops: string[]) {
   const ref = doc(db, "farmers", uid);

@@ -8,7 +8,7 @@ import { useDashboard } from "@/context/DashboardContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getCropImage, getCropOption } from "@/lib/crops";
 import { getCropGrowthInfo } from "@/lib/cropGrowth";
-import { addAdvisory, addFragilityAdvisory, fetchAdvisories, fetchFragilityAdvisories } from "@/lib/firestore";
+import { addAdvisory, addFragilityAdvisory, fetchAdvisories, fetchFarmMemory, fetchFragilityAdvisories } from "@/lib/firestore";
 import { normalizeSoilSummary } from "@/lib/soil";
 import type { WeatherData } from "@/lib/dashboard-types";
 
@@ -50,7 +50,8 @@ export default function DashboardOverviewPage() {
     setAdviceLoading(true);
     try {
       const cropStages = Object.fromEntries((farm.crops ?? []).map((crop) => [crop, { stage: farm.cropStatus?.[crop]?.stage ?? "unknown", plantedAt: farm.cropStatus?.[crop]?.plantedAt }]));
-      const response = await fetch("/api/advice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, crops: farm.crops ?? [], weather, lang: farm.language ?? lang, cropStages, state: farm.state, lga: farm.lga, soilSummary: farm.soilSummary ?? null, soil: farm.soil ?? null, previousAdvice: latestAdvice?.text ?? "" }) });
+      const memory = await fetchFarmMemory(user.uid).catch(() => null);
+      const response = await fetch("/api/advice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, crops: farm.crops ?? [], weather, lang: farm.language ?? lang, cropStages, state: farm.state, lga: farm.lga, soilSummary: farm.soilSummary ?? null, soil: farm.soil ?? null, previousAdvice: JSON.stringify(memory ?? latestAdvice?.text ?? "").slice(0, 12000) }) });
       const json = await response.json();
       if (!response.ok) throw new Error();
       const text = json?.executiveSummary ?? json?.advice ?? json?.advisory ?? "Your farm advice is ready.";

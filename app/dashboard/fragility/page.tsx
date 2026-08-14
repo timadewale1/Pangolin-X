@@ -1,159 +1,18 @@
 "use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
-import ZoneHeatmap from "@/components/dashboard/ZoneHeatmap";
-import { useDashboard } from "@/context/DashboardContext";
-import { useLanguage } from "@/context/LanguageContext";
-import type { FragilityReport } from "@/lib/dashboard-types";
-import { addFragilityAdvisory, fetchFragilityAdvisories } from "@/lib/firestore";
+import { AlertTriangle, ArrowUpRight, RefreshCw, ShieldCheck } from "lucide-react";
 import Loader from "@/components/Loader";
+import { useDashboard } from "@/context/DashboardContext";
+import { addFragilityAdvisory, fetchFragilityAdvisories } from "@/lib/firestore";
+import type { FragilityReport } from "@/lib/dashboard-types";
 
+const tone = (score: number) => score >= 70 ? "bg-[#c84f37]" : score >= 40 ? "bg-[#d19a2b]" : "bg-[#2c8a51]";
 export default function FragilityPage() {
-  const { farm, user } = useDashboard();
-  const { t } = useLanguage();
-  const [report, setReport] = useState<FragilityReport | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadReport = useCallback(async (saveToHistory = false) => {
-    if (!farm?.lga) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/fragility", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user?.uid,
-          lang: farm.language ?? "en",
-          lga: farm.lga,
-          state: farm.state,
-        }),
-      });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json?.error ?? "Risk information is temporarily unavailable.");
-      setReport(json);
-      if (saveToHistory && user) await addFragilityAdvisory(user.uid, { header: json.header, sections: json.sections, weather: null, report: json });
-    } catch (error) {
-      setReport(null);
-      console.error("Unable to refresh risk report", error);
-      setError(t("system_error"));
-    } finally {
-      setLoading(false);
-    }
-  }, [farm?.lga, farm?.state, farm?.language, user, t]);
-
-  useEffect(() => {
-    if (!user) return;
-    fetchFragilityAdvisories(user.uid, 1).then((items) => {
-      const saved = items[0] as { report?: FragilityReport } | undefined;
-      if (saved?.report) setReport(saved.report);
-      else void loadReport(true);
-    }).catch(() => void loadReport(true));
-  }, [loadReport, user]);
-
-  const scoreCards = useMemo(() => {
-    if (!report) return [];
-    return [
-      { label: t("overall_risk") ?? "Overall risk", value: report.overallScore },
-      { label: t("flood_drought_risk") ?? "Flood", value: report.scores.flood },
-      { label: t("conflict_displacement") ?? "Conflict", value: report.scores.conflict },
-      { label: t("infrastructure_market_access") ?? "Infrastructure", value: report.scores.infrastructure },
-      { label: t("health_disease_outbreaks") ?? "Health", value: report.scores.health },
-      { label: "Climate", value: report.scores.climate },
-    ];
-  }, [report, t]);
-
-  return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-[1.75rem] border border-[#263f31] bg-[#10271a] shadow-[0_18px_50px_rgba(16,39,26,.18)]">
-        <div className="p-6 text-white md:flex md:items-center md:justify-between md:p-8">
-          <div className="max-w-3xl">
-            <p className="text-sm uppercase tracking-[0.22em] text-emerald-200">{t("fragility_intelligence") ?? "Fragility Intelligence"}</p>
-            <h2 className="mt-2 text-3xl font-semibold">Your farm resilience report</h2>
-            <p className="mt-3 text-sm leading-7 text-emerald-50/90">A focused view of conditions that may affect your field access, crops, and farm decisions.</p>
-          </div>
-          <div className="mt-5 flex flex-wrap gap-3 md:mt-0">
-            <button onClick={() => void loadReport(true)} disabled={loading} className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#183127] transition hover:bg-[#f1f2eb] disabled:opacity-60">
-              {loading ? (t("refreshing") ?? "Refreshing...") : (t("refresh") ?? "Refresh report")}
-            </button>
-          </div>
-        </div>
-      </section>
-      {error ? <div role="alert" className="rounded-xl border border-[#e9c4be] bg-[#fff7f5] px-4 py-3 text-sm leading-6 text-[#8c352d]">{error}</div> : null}
-
-      {report ? (
-        <>
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            {scoreCards.map((card) => (
-              <div key={card.label} className="rounded-2xl border border-[#d8e5d9] bg-white p-5">
-                <div className="text-xs uppercase tracking-[0.18em] text-[#568064]">{card.label}</div>
-                <div className="mt-3 text-3xl font-bold text-[#173c28]">{card.value}</div>
-              </div>
-            ))}
-          </section>
-
-          <section className="grid gap-6 xl:grid-cols-[1.05fr_1fr]">
-            <ZoneHeatmap zones={report.zoneScores} />
-            <div className="farm-card p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-emerald-600">Evidence</p>
-              <h3 className="mt-2 text-xl font-semibold text-slate-900">Sources behind this report</h3>
-              <div className="mt-5 space-y-3">
-                {report.sources.map((source) => (
-                  <div key={source.id} className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50/50 p-4">
-                    <a href={source.url ?? `https://www.google.com/search?q=${encodeURIComponent(`${source.source} ${source.title}`)}`} target="_blank" rel="noreferrer" className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">{source.title}</div>
-                        <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
-                          {source.source} / {source.type}
-                        </div>
-                      </div>
-                      <span className="text-sm font-medium text-emerald-700 underline">Open source</span>
-                    </a>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="grid gap-4 xl:grid-cols-2">
-              <div className="farm-card p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-emerald-600">{t("recommended_delivery") ?? "Recommended delivery"}</p>
-              <h3 className="mt-2 text-xl font-semibold text-slate-900">{report.recommendedChannels.join(" / ")}</h3>
-              <p className="mt-3 text-sm text-slate-600">{t("confidence") ?? "Confidence"}: {report.confidence}%</p>
-            </div>
-
-            <div className="farm-card p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-emerald-600">{t("location_section") ?? "Location"}</p>
-              <h3 className="mt-2 text-xl font-semibold text-slate-900">
-                {report.location.lga}, {report.location.state}
-              </h3>
-              <p className="mt-3 text-sm text-slate-600">
-                Zone: {report.location.zone ?? "Unknown"} / Generated {new Date(report.generatedAt).toLocaleString()}
-              </p>
-            </div>
-          </section>
-
-          <section className="grid gap-4">
-            {report.sections.map((section) => (
-              <div key={section.title} className="farm-card p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.22em] text-emerald-600">{section.title}</p>
-                    <p className="mt-3 text-sm leading-7 text-slate-700">{section.summary}</p>
-                  </div>
-                  <div className="rounded-[1.5rem] bg-slate-50 px-4 py-3 text-right">
-                    <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{section.severity}</div>
-                    <div className="mt-2 text-2xl font-bold text-slate-900">{section.score}</div>
-                    <div className="text-sm capitalize text-slate-600">{section.trend}</div>
-                  </div>
-                </div>
-                <div className="mt-4 text-xs uppercase tracking-[0.18em] text-slate-400">Sources: {section.sourceRefs.join(", ")}</div>
-              </div>
-            ))}
-          </section>
-        </>
-      ) : loading ? <div className="flex min-h-[22rem] items-center justify-center rounded-[2rem] border border-[#d8e5d9] bg-[#f7faf6]"><div className="text-center"><Loader /><p className="mt-4 text-sm font-medium text-[#617067]">Preparing your resilience report…</p></div></div> : <div className="rounded-[2rem] border border-dashed border-[#d3dfd2] bg-[#f7faf6] p-10 text-center text-[#617067]">Add your farm location in Settings to receive local risk guidance.</div>}
-    </div>
-  );
+  const { farm, user } = useDashboard(); const [report, setReport] = useState<FragilityReport | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const refresh = useCallback(async (force = false) => { if (!farm?.lga || !user) { setLoading(false); return; } setLoading(true); setError(""); try { if (!force) { const saved = await fetchFragilityAdvisories(user.uid, 1); const existing = (saved[0] as { report?: FragilityReport } | undefined)?.report; if (existing) { setReport(existing); return; } } const res = await fetch("/api/fragility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, lang: farm.language, state: farm.state, lga: farm.lga }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error); setReport(data); await addFragilityAdvisory(user.uid, { header: data.header, sections: data.sections, report: data }); } catch (e) { setError(e instanceof Error ? e.message : "Your resilience report is temporarily unavailable."); } finally { setLoading(false); } }, [farm?.lga, farm?.state, farm?.language, user]);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const priority = useMemo(() => report?.sections.slice().sort((a, b) => b.score - a.score)[0], [report]);
+  if (loading && !report) return <div className="grid min-h-[65vh] place-items-center rounded-[2rem] bg-[#0e2117]"><div className="text-center text-white"><Loader /><p className="mt-5 text-sm text-white/70">Building your farm resilience report…</p></div></div>;
+  if (!report) return <div className="rounded-[2rem] border border-[#ebc3bc] bg-[#fff8f6] p-8 text-[#8a3a2c]">{error || "Add your farm location to prepare a resilience report."}</div>;
+  return <div className="space-y-5"><section className="overflow-hidden rounded-[2rem] bg-[#0e2117] p-6 text-white md:p-9"><div className="flex flex-wrap items-start justify-between gap-5"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-[#91c99e]">Farm resilience</p><h1 className="mt-3 text-3xl font-extrabold tracking-[-.05em] md:text-5xl">{report.header}</h1><p className="mt-4 max-w-2xl text-sm leading-7 text-white/70">A focused risk picture for {report.location.lga}, {report.location.state}. It stays saved until you choose to refresh it.</p></div><button onClick={() => void refresh(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-[#183127]"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh report</button></div><div className="mt-9 grid gap-4 md:grid-cols-[.8fr_1.2fr]"><div className="rounded-3xl bg-white/10 p-5"><p className="text-xs font-bold uppercase tracking-[.16em] text-white/60">Overall exposure</p><p className="mt-3 text-6xl font-extrabold">{report.overallScore}<span className="text-xl text-white/50">/100</span></p><p className="mt-4 text-sm text-white/70">Confidence {report.confidence}% · Updated {new Date(report.generatedAt).toLocaleString()}</p></div>{priority ? <div className="rounded-3xl bg-[#f2f7ed] p-5 text-[#173c28]"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#5c7a62]">Priority response this week</p><h2 className="mt-2 text-xl font-extrabold">{priority.title}</h2><p className="mt-3 text-sm leading-7">{priority.summary}</p></div> : null}</div></section><section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{Object.entries(report.scores).map(([name, score]) => <div key={name} className="rounded-2xl border border-[#dbe5da] bg-white p-4"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[.13em] text-[#637567]">{name}</p><span className={`h-2.5 w-2.5 rounded-full ${tone(score)}`} /></div><p className="mt-4 text-3xl font-extrabold text-[#173c28]">{score}</p></div>)}</section><section className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]"><div className="space-y-3">{report.sections.map((section) => <article key={section.title} className="rounded-3xl border border-[#dbe5da] bg-white p-5"><div className="flex items-start gap-4"><span className={`mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full text-white ${tone(section.score)}`}><AlertTriangle className="h-5 w-5" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-extrabold text-[#173c28]">{section.title}</h2><span className="text-sm font-bold text-[#526558]">{section.score}/100 · {section.trend}</span></div><p className="mt-3 text-sm leading-7 text-[#435447]">{section.summary}</p></div></div></article>)}</div><aside className="rounded-3xl border border-[#dbe5da] bg-[#f5f8f3] p-5"><ShieldCheck className="h-6 w-6 text-[#1c7a43]" /><p className="mt-4 text-xs font-bold uppercase tracking-[.16em] text-[#5c7a62]">Evidence used</p><div className="mt-4 space-y-3">{report.sources.map((source) => <a key={source.id} href={source.url ?? `https://www.google.com/search?q=${encodeURIComponent(`${source.source} ${source.title}`)}`} target="_blank" rel="noreferrer" className="block rounded-2xl bg-white p-4 transition hover:shadow-sm"><p className="font-bold text-[#173c28]">{source.title}</p><p className="mt-1 text-xs text-[#617067]">{source.source} · {source.type}</p><span className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-[#176636]">Open evidence <ArrowUpRight className="h-4 w-4" /></span></a>)}</div></aside></section></div>;
 }
