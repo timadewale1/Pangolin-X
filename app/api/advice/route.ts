@@ -4,7 +4,7 @@ import { fetchLocalNews } from "@/lib/news";
 import { adminDB } from "@/lib/firebaseAdmin";
 import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
 import { getLanguageLabel } from "@/lib/language";
-import { takeAdviceRequest } from "@/lib/adviceRateLimit";
+import { takeDurableAdviceRequest } from "@/lib/adviceRateLimit";
 
 export async function POST(req: Request) {
   try {
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Farm advice is temporarily unavailable. Please try again shortly." }, { status: 503 });
     }
     const body = await req.json();
-    const rate = takeAdviceRequest(String(body.userId || req.headers.get("x-forwarded-for") || "anonymous"));
+    const rate = await takeDurableAdviceRequest(String(body.userId || req.headers.get("x-forwarded-for") || "anonymous"));
     if (!rate.allowed) return NextResponse.json({ error: `You can request up to three new advisories every 30 minutes. Please try again in about ${Math.ceil(rate.retryAfterSeconds / 60)} minutes.` }, { status: 429 });
     const crops: string[] = body.crops ?? [];
     const weather = body.weather;
@@ -20,6 +20,27 @@ export async function POST(req: Request) {
     const cropStages: Record<string, { stage?: string }> | undefined = body.cropStages;
     if (!crops || !weather || !body.state || !body.lga) {
       return NextResponse.json({ error: "Missing data (crops, weather, location)" }, { status: 400 });
+    }
+    // The advisory service owns the long-term farm memory. It reads the farmer's
+    // own previous advice, crop advice, fragility reports and chat notes instead
+    // of relying on whichever screen made the request.
+    let intelligenceMemory = "No previous farm memory is available yet.";
+    if (adminDB && typeof body.userId === "string") {
+      try {
+        const farmer = adminDB.collection("farmers").doc(body.userId);
+        const [advisories, cropAdvisories, fragility, notes] = await Promise.all([
+          farmer.collection("advisories").orderBy("createdAt", "desc").limit(5).get(),
+          farmer.collection("cropAdvisories").orderBy("createdAt", "desc").limit(8).get(),
+          farmer.collection("fragility").orderBy("createdAt", "desc").limit(2).get(),
+          farmer.collection("farmNotes").orderBy("createdAt", "desc").limit(12).get(),
+        ]);
+        intelligenceMemory = JSON.stringify({
+          advisories: advisories.docs.map((item) => item.data()),
+          cropAdvisories: cropAdvisories.docs.map((item) => item.data()),
+          fragility: fragility.docs.map((item) => item.data()),
+          farmerNotes: notes.docs.map((item) => item.data()),
+        }).slice(0, 18000);
+      } catch (error) { console.warn("Farm intelligence memory unavailable", error); }
     }
 
     const forecastDate = body.forecastDate ? new Date(body.forecastDate) : null;
@@ -137,7 +158,7 @@ Context:
 - ${forecastDate ? `Forecast date: ${forecastDate.toLocaleDateString()}` : "Advice type: current conditions"}
 - Weather: ${temp}C, ${cond}
 - Location: ${body.lga}, ${body.state}
-- Previous advice for this farm (use only to continue from completed actions and avoid repeating it): ${String(body.previousAdvice ?? "No previous advice is available.").slice(0, 6000)}
+- Central farm intelligence memory. Continue from this farmer's recorded advice, crop observations, fragility reports and chat notes. Do not repeat completed work or present unrelated generic steps: ${intelligenceMemory}
 - Soil information:
 ${soilInfo}
 

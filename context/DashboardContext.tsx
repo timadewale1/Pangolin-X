@@ -214,9 +214,10 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   }, [farm?.farmPhotos, user]);
 
   const logout = useCallback(async () => {
+    if (user && typeof window !== "undefined") sessionStorage.removeItem(`pangolin-fragility-session-${user.uid}`);
     await signOut(auth);
     router.push("/");
-  }, [router]);
+  }, [router, user]);
 
   const openSidebar = useCallback(() => setSidebarOpen(true), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);

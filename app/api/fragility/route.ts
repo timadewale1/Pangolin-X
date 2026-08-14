@@ -4,7 +4,7 @@ import { fetchLocalNews } from "@/lib/news";
 import { getNigeriaZone, NIGERIA_ZONE_ORDER } from "@/lib/nigeria-zones";
 import type { FragilityReport, FragilitySource } from "@/lib/dashboard-types";
 import { getLanguageLabel } from "@/lib/language";
-import { takeAdviceRequest } from "@/lib/adviceRateLimit";
+import { takeDurableAdviceRequest } from "@/lib/adviceRateLimit";
 
 function clampScore(input: unknown, fallback: number) {
   const value = Number(input);
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
   let requestLocation: { lga?: string | null; state?: string | null } = {};
   try {
     const body = await req.json();
-    const rate = takeAdviceRequest(`fragility:${String(body.userId || req.headers.get("x-forwarded-for") || "anonymous")}`);
+    const rate = await takeDurableAdviceRequest(`fragility:${String(body.userId || req.headers.get("x-forwarded-for") || "anonymous")}`);
     if (!rate.allowed) return NextResponse.json({ error: `You can refresh this report up to three times every 30 minutes. Please try again in about ${Math.ceil(rate.retryAfterSeconds / 60)} minutes.` }, { status: 429 });
     const lga = body.lga ?? null;
     const state = body.state ?? null;

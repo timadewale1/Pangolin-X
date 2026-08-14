@@ -65,6 +65,14 @@ export default function DashboardOverviewPage() {
 
   useEffect(() => {
     if (!user) return;
+    const fragilitySessionKey = `pangolin-fragility-session-${user.uid}`;
+    if (!sessionStorage.getItem(fragilitySessionKey) && farm?.state && farm?.lga) {
+      fetch("/api/fragility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.uid, state: farm.state, lga: farm.lga, lang }) })
+        .then((response) => response.ok ? response.json() : null)
+        .then(async (fresh) => { if (fresh?.sections?.[0]) { setRisk({ title: fresh.header ?? t("risk_to_watch"), text: fresh.sections[0].summary ?? "", severity: fresh.sections[0].severity }); await addFragilityAdvisory(user.uid, { header: fresh.header, sections: fresh.sections, weather: null, report: fresh }); sessionStorage.setItem(fragilitySessionKey, "ready"); } })
+        .catch(() => undefined);
+      return;
+    }
     Promise.all([fetchAdvisories(user.uid, 1), fetchFragilityAdvisories(user.uid, 1)]).then(([advisories, reports]) => {
       const advisory = advisories[0] as { header?: string; advice?: string; advisory?: string; createdAt?: unknown; details?: Array<{ crop?: string; advice?: string; summary?: string }> } | undefined;
       const report = reports[0] as { header?: string; sections?: Array<{ summary?: string; severity?: string }>; report?: { header?: string; sections?: Array<{ summary?: string; severity?: string }> } } | undefined;
