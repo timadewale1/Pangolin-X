@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CloudRain, Droplets, Leaf, MapPin, RefreshCw, ShieldAlert, Sprout, ThermometerSun, Volume2, Wind } from "lucide-react";
+import { ArrowRight, CloudRain, Droplets, Leaf, MapPin, RefreshCw, ShieldAlert, Sprout, ThermometerSun, Wind } from "lucide-react";
+import SpeechButton from "@/components/SpeechButton";
 import { useDashboard } from "@/context/DashboardContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getCropImage, getCropOption } from "@/lib/crops";
@@ -16,6 +17,7 @@ function dateLabel(value: unknown) {
   const date = value && typeof value === "object" && "seconds" in value ? new Date(Number(value.seconds) * 1000) : value ? new Date(String(value)) : null;
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "Recently";
 }
+function riskKeyword(value?: string) { return value?.replace(/risk management/gi, "").replace(/risk/gi, "").trim() || "Review local risks"; }
 
 function FieldPhoto({ src, alt }: { src?: string; alt: string }) {
   return src ? <Image src={src} alt={alt} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 55vw" priority /> : <div className="absolute inset-0 bg-[#315d42]" />;
@@ -62,7 +64,6 @@ export default function DashboardOverviewPage() {
     } catch { setLatestAdvice({ title: "Advice unavailable", text: "We could not prepare a new farm advisory just now. Please try again shortly." }); }
     finally { setAdviceLoading(false); }
   }, [adviceLoading, farm, lang, subscriptionActive, user, weather]);
-  const speakAdvice = useCallback(async (text: string) => { const response = await fetch("/api/chat/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }); if (response.ok) new Audio(URL.createObjectURL(await response.blob())).play().catch(() => undefined); }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -115,15 +116,15 @@ export default function DashboardOverviewPage() {
     <section className="grid gap-4 md:grid-cols-3">
       <OverviewMetric icon={Leaf} label={t("active_crops")} value={String(crops.length)} />
       <OverviewMetric icon={Sprout} label={t("soil_condition")} value={soil.label} />
-      <div className="farm-card p-5"><ShieldAlert className="h-5 w-5 text-[#0b9a49]" /><p className="mt-5 metric-label">{t("risk_to_watch")}</p><p className="mt-2 truncate text-xl font-bold tracking-[-.04em] text-[#183127]">{risk?.topic ?? "Review local risks"}</p><p className="mt-1 text-sm font-semibold capitalize text-[#617067]">{risk?.severity ?? "Checking"} risk</p><Link href="/dashboard/fragility" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-[#087a3d]">View report <ArrowRight className="h-4 w-4" /></Link></div>
+      <div className="farm-card p-5"><ShieldAlert className="h-5 w-5 text-[#0b9a49]" /><p className="mt-5 metric-label">{t("risk_to_watch")}</p><p className="mt-2 truncate text-xl font-bold tracking-[-.04em] text-[#183127]">{riskKeyword(risk?.topic)}</p><p className="mt-1 text-sm font-semibold capitalize text-[#617067]">{risk?.severity ?? "Checking"} risk</p><Link href="/dashboard/fragility" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-[#087a3d]">View report <ArrowRight className="h-4 w-4" /></Link></div>
     </section>
 
+    {latestAdvice ? <div className="flex justify-start"><SpeechButton text={latestAdvice.text} language={farm?.language ?? lang} label="Listen to farm advice" /></div> : null}
     <section className="grid gap-5 xl:grid-cols-[1.3fr_.7fr]">
       <div className="farm-card p-5 md:p-6 xl:col-span-2"><div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Your crops</p><h2 className="mt-2 text-xl font-bold tracking-[-.03em] text-[#183127]">Crop progress</h2></div><Link className="text-sm font-bold text-[#28533b]" href="/dashboard/crops">View all</Link></div>
         {crops.length ? <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{crops.slice(0, 6).map(({ id, option, growth }) => <article key={id} className="rounded-xl border border-[#dce3d9] p-3"><div className="flex gap-3"><Image src={getCropImage(id)} alt={option?.label ?? id} width={66} height={66} className="h-[66px] w-[66px] rounded-lg object-cover" /><div className="min-w-0 flex-1"><p className="font-bold text-[#183127]">{option?.label ?? id}</p><p className="mt-1 text-xs text-[#617067]">{growth.phaseLabel} · {growth.daysPlanted ?? 0} days</p><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e3e8df]"><div className="h-full bg-[#16A34A]" style={{ width: `${growth.progress}%` }} /></div></div></div><p className="mt-3 line-clamp-2 text-sm leading-6 text-[#617067]">{cropAdvice[id] || "Open this crop to view its advice."}</p><Link href={`/dashboard/crops/${id}`} className="mt-3 inline-flex text-sm font-bold text-[#16A34A]">View {option?.label ?? id} advice <ArrowRight className="ml-2 h-4 w-4" /></Link></article>)}</div> : <EmptyPanel title="No crops added yet" text="Add the crops growing on your farm so your advice can be more useful." href="/dashboard/crops" action="Add crops" />}</div>
       <div className="farm-card p-5 md:p-6 xl:col-span-2"><div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Advice for your farm</p><h2 className="mt-2 text-xl font-bold tracking-[-.03em] text-[#183127]">What to do next</h2></div><CloudRain className="h-5 w-5 text-[#0b8f45]" /></div>{latestAdvice ? <><p className="mt-5 text-base font-bold leading-6 text-[#183127]">{latestAdvice.title}</p><p className="mt-2 whitespace-pre-line text-sm leading-7 text-[#617067]">{latestAdvice.text}</p><p className="mt-4 text-xs text-[#829087]">Updated {dateLabel(latestAdvice.createdAt)}</p></> : <p className="mt-5 text-sm leading-6 text-[#617067]">Get a fresh, practical plan for today&apos;s farm work whenever you are ready.</p>}<button onClick={() => void refreshFarmAdvice()} disabled={!canGetAdvice} className="action-primary mt-5 disabled:cursor-not-allowed disabled:opacity-50">{adviceLoading ? "Preparing advice…" : "Get new advice"}</button>{risk ? <div className="mt-6 rounded-2xl border border-[#eadfb8] bg-[#fffdf4] p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#8a6a16]">Fragility advice</p><Link href="/dashboard/fragility" className="text-sm font-bold text-[#28533b]">View report</Link></div><p className="mt-3 text-sm leading-6 text-[#4a4d38]">{risk.text}</p></div> : null}{!subscriptionActive ? <p className="mt-3 text-sm text-[#a2423b]">Renew your subscription to receive fresh farm advice.</p> : !hasFarmArea ? <p className="mt-3 text-sm text-[#617067]">Add your state and local government area in Settings to get tailored advice.</p> : !weather ? <p className="mt-3 text-sm text-[#617067]">We are preparing your local weather before advice can be generated.</p> : !crops.length ? <p className="mt-3 text-sm text-[#617067]">Add at least one crop before requesting farm advice.</p> : null}</div>
     </section>
-    {latestAdvice ? <div className="flex justify-start"><button onClick={() => void speakAdvice(latestAdvice.text)} className="inline-flex items-center gap-2 rounded-xl border border-[#a9d9b9] bg-[#eaf8ee] px-4 py-3 text-sm font-bold text-[#087a3d]"><Volume2 className="h-5 w-5" />Listen to today&apos;s farm advice</button></div> : null}
   </div>;
 }
 

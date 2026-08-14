@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     const crops: string[] = body.crops ?? [];
     const weather = body.weather;
     const lang = getLanguageLabel(body.lang);
-    const cropStages: Record<string, { stage?: string }> | undefined = body.cropStages;
+    const cropStages: Record<string, { stage?: string; plantedAt?: string }> | undefined = body.cropStages;
     const singleCropRequest = crops.length === 1;
     const farmRequest = body.advisoryScope === "farm";
     if (!crops || !weather || !body.state || !body.lga) {
@@ -27,15 +27,18 @@ export async function POST(req: Request) {
     // own previous advice, crop advice, fragility reports and chat notes instead
     // of relying on whichever screen made the request.
     let intelligenceMemory = "No previous farm memory is available yet.";
+    let farmerProfile = "The farmer has not provided a display name.";
     if (adminDB && typeof body.userId === "string") {
       try {
         const farmer = adminDB.collection("farmers").doc(body.userId);
-        const [advisories, cropAdvisories, fragility, notes] = await Promise.all([
+        const [profile, advisories, cropAdvisories, fragility, notes] = await Promise.all([
+          farmer.get(),
           farmer.collection("advisories").orderBy("createdAt", "desc").limit(5).get(),
           farmer.collection("cropAdvisories").orderBy("createdAt", "desc").limit(8).get(),
           farmer.collection("fragility").orderBy("createdAt", "desc").limit(2).get(),
           farmer.collection("farmNotes").orderBy("createdAt", "desc").limit(12).get(),
         ]);
+        farmerProfile = JSON.stringify(profile.data() ?? {}).slice(0, 4000);
         intelligenceMemory = JSON.stringify({
           advisories: advisories.docs.map((item) => item.data()),
           cropAdvisories: cropAdvisories.docs.map((item) => item.data()),
@@ -132,7 +135,9 @@ Return ONLY valid JSON in this exact shape:
 Rules:
 - Make the response feel premium, tactical, and decision-grade, not generic.
 - Write in clear farmer-friendly ${lang || "English"}.
+- "generatedFor" must address this individual farmer personally (for example, "Your maize field, 104 days after planting"), never a group such as "maize farmers".
 - Open with a concise executive summary for the whole farm, not just crop-by-crop notes.
+- Novelty requirement: inspect the central intelligence memory before writing. Do not recycle an earlier drainage, pest, fertiliser or inspection paragraph. When weather and stage are similar, move the farmer forward with a measurable field check, escalation threshold, timing change, post-action verification, harvest-readiness checkpoint, or recorded observation.
 - ${farmRequest ? "This is a farm-wide request: return exactly one item named Farm-wide priorities. Its advice must cover the farm's daily operations, weather, soil, water, labour, field access and scouting. Do not write separate advice for individual crops." : "This is a crop advisory request: keep every item specific to its crop."}
 - Identify the most important action window in "priorityWindow".
 - "regionalSignals" should capture 2 to 4 short signals from weather, mobility, market, flood, pest, conflict, or input access context.
@@ -157,7 +162,8 @@ Rules:
 
 Context:
 - Crops: ${crops.join(", ")}
-- Crop stages: ${crops.map((crop) => `${crop}: ${cropStages?.[crop]?.stage || "unknown"}`).join(", ")}
+- Crop stages and planting dates: ${crops.map((crop) => `${crop}: stage=${cropStages?.[crop]?.stage || "unknown"}, planted=${cropStages?.[crop]?.plantedAt || "not recorded"}`).join("; ")}
+- Farmer profile: ${farmerProfile}
 - ${forecastDate ? `Forecast date: ${forecastDate.toLocaleDateString()}` : "Advice type: current conditions"}
 - Weather: ${temp}C, ${cond}
 - Location: ${body.lga}, ${body.state}
