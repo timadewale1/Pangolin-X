@@ -39,6 +39,7 @@ export default function ForecastAdvisoryPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            userId: user.uid,
             crops: farm.crops ?? [],
             weather: day,
             lang: farm.language ?? lang ?? "en",

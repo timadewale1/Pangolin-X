@@ -59,6 +59,7 @@ export default function AdvisoriesPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: user.uid,
           crops: farm.crops ?? [],
           weather,
           lang: farm.language ?? "en",
