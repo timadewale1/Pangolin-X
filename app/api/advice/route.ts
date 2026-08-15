@@ -6,6 +6,7 @@ import { parseAdvisoryPayload, renderAdvisoryText } from "@/lib/advisory";
 import { getLanguageLabel } from "@/lib/language";
 import { takeDurableAdviceRequest } from "@/lib/adviceRateLimit";
 import { buildFarmIntelligence, highValueAdvisoryStandard } from "@/lib/farmIntelligence";
+import { runFarmInsightEngine } from "@/lib/farmInsightEngine";
 import type { AdvisoryResponse } from "@/lib/dashboard-types";
 
 function compactText(value: unknown) {
@@ -227,6 +228,33 @@ export async function POST(req: Request) {
       console.warn("Targeted intelligence search unavailable", error);
     }
 
+    const insightReport = runFarmInsightEngine({
+      weather,
+      forecast: body.forecast ?? (weather && typeof weather === "object" ? (weather as Record<string, unknown>).daily : null),
+      soil: body.soil,
+      crops,
+      cropStages,
+      weatherHistory: collectedWeatherHistory,
+      vegetation: collectedVegetation,
+      marketSignals: collectedMarketSignals,
+      cropHealthSignals: collectedCropHealthSignals,
+      irrigationHistory: body.irrigationHistory,
+      inputApplications: body.inputApplications,
+      fieldObservations: body.fieldObservations,
+      location: [body.lga, body.state].filter(Boolean).join(", "),
+    });
+    if (insightReport.status === "NO_ACTIONABLE_INSIGHT") {
+      const noSignal = noMaterialSignalResponse(crops[0] ?? "Farm", farmRequest);
+      return NextResponse.json({
+        ...noSignal,
+        intelligenceSummary: "No significant actionable insight detected from the currently available evidence.",
+        executiveSummary: "No significant crop, weather, soil, vegetation, market, or local crop-health signal currently requires a change to your planned management. Pangolin-X will not add routine advice where the evidence does not support a decision.",
+        limitations: insightReport.limitations,
+        insightReport,
+        advice: renderAdvisoryText(noSignal),
+      });
+    }
+
     const prompt = `You are Pangolin-X Advisory AI, a premium agro-meteorological field copilot for Nigerian farmers.
 
 Return ONLY valid JSON in this exact shape:
@@ -268,6 +296,7 @@ Return ONLY valid JSON in this exact shape:
 }
 
 Rules:
+- The Farm Insight Engine report below is authoritative. Write only from its selected insights, evidence, decision, timing, and confidence. Do not analyze raw data, create a new risk, or add a decision not present in that report.
 - ${highValueAdvisoryStandard()}
 - Apply this mandatory high-value standard: identify only farm-specific, data-backed intelligence a knowledgeable farmer could not reliably infer unaided. Interpret evidence rather than repeating it, and structure each priority as observation, interpretation, consequence, decision, and timing.
 - Use all supplied signals together, but never turn missing weather history, satellite data, input records, irrigation records, market data, crop variety, soil tests, field zones, pests, diseases, rainfall totals, or thresholds into asserted facts.
@@ -302,6 +331,7 @@ Rules:
 - Do not include markdown or any text outside the JSON.
 
 Context:
+- Authoritative Farm Insight Engine report: ${JSON.stringify(insightReport)}
 - Derived farm intelligence: ${JSON.stringify(intelligence)}
 - Raw weather payload: ${JSON.stringify(weather).slice(0, 8000)}
 - Forecast payload when supplied: ${JSON.stringify(body.forecast ?? null).slice(0, 8000)}
@@ -394,6 +424,7 @@ ${newsSummary}`;
 
     return NextResponse.json({
       ...normalized,
+      insightReport,
       advice: renderAdvisoryText(normalized),
     });
   } catch (error) {

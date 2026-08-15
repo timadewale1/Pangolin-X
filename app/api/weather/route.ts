@@ -26,8 +26,8 @@ async function fetchOpenMeteoFallback(lat: number, lon: number, days: number) {
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("longitude", String(lon));
   url.searchParams.set("timezone", "auto");
-  url.searchParams.set("current", "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,pressure_msl,wind_speed_10m");
-  url.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max");
+  url.searchParams.set("current", "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,pressure_msl,wind_speed_10m,precipitation");
+  url.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,precipitation_sum");
   url.searchParams.set("forecast_days", String(Math.max(1, Math.min(days, 10))));
 
   const response = await fetchWithTimeout(url.toString());
@@ -51,6 +51,7 @@ async function fetchOpenMeteoFallback(lat: number, lon: number, days: number) {
         humidity: data.current?.relative_humidity_2m ?? null,
         pressure: data.current?.pressure_msl ?? null,
         wind_speed: data.current?.wind_speed_10m ?? null,
+        rain: data.daily.precipitation_sum?.[index] ?? null,
       }))
     : [];
 
@@ -70,6 +71,7 @@ async function fetchOpenMeteoFallback(lat: number, lon: number, days: number) {
         },
       ],
       wind_speed: data.current?.wind_speed_10m ?? null,
+      rain: data.current?.precipitation ?? null,
     },
     daily,
   };
@@ -140,6 +142,7 @@ export async function POST(req: Request) {
             weather?: Array<{ description?: string; main?: string; icon?: string; id?: number }>;
             wind?: { speed?: number };
             main?: { humidity?: number; pressure?: number };
+            rain?: { "3h"?: number };
           };
           return {
             dt: first.dt,
@@ -153,6 +156,7 @@ export async function POST(req: Request) {
             humidity: first.main?.humidity,
             pressure: first.main?.pressure,
             wind_speed: first.wind?.speed,
+            rain: entry.items.reduce((total, item) => total + (Number((item.rain as { "3h"?: number } | undefined)?.["3h"] ?? 0) || 0), 0),
           };
         });
 
@@ -160,6 +164,7 @@ export async function POST(req: Request) {
         main?: { temp?: number; feels_like?: number; humidity?: number; pressure?: number };
         weather?: Array<{ description?: string; icon?: string; id?: number }>;
         wind?: { speed?: number };
+        rain?: { "1h"?: number; "3h"?: number };
       } : null;
       const current = currentItem ? {
         temp: currentItem.main?.temp ?? null,
@@ -168,6 +173,7 @@ export async function POST(req: Request) {
         pressure: currentItem.main?.pressure ?? null,
         weather: currentItem.weather ?? [],
         wind_speed: currentItem.wind?.speed ?? null,
+        rain: currentItem.rain?.["3h"] ?? null,
       } : null;
       return respond({ timezone: fallbackJson.city?.timezone ?? null, lat, lon, current, daily });
     }

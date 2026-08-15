@@ -8,16 +8,18 @@ function weatherSnapshot(weather: unknown) {
   const current = source.current && typeof source.current === "object" ? source.current as Record<string, unknown> : source.main && typeof source.main === "object" ? source.main as Record<string, unknown> : {};
   const weatherItems = Array.isArray(current.weather) ? current.weather : Array.isArray(source.weather) ? source.weather : [];
   const first = weatherItems[0] && typeof weatherItems[0] === "object" ? weatherItems[0] as Record<string, unknown> : {};
+  const rain = source.rain && typeof source.rain === "object" ? source.rain as Record<string, unknown> : {};
   return {
     temp: Number(current.temp ?? current.temperature_2m),
     humidity: Number(current.humidity ?? current.relative_humidity_2m),
     windSpeed: Number(current.wind_speed ?? (source.wind && typeof source.wind === "object" ? (source.wind as Record<string, unknown>).speed : undefined)),
+    rainMm: Number(current.rain ?? rain["1h"] ?? rain["3h"]),
     condition: typeof first.description === "string" ? first.description : null,
   };
 }
 
 function validSnapshot(snapshot: ReturnType<typeof weatherSnapshot>) {
-  return Number.isFinite(snapshot.temp) || Number.isFinite(snapshot.humidity) || Number.isFinite(snapshot.windSpeed);
+  return Number.isFinite(snapshot.temp) || Number.isFinite(snapshot.humidity) || Number.isFinite(snapshot.windSpeed) || Number.isFinite(snapshot.rainMm);
 }
 
 export async function POST(request: Request) {
