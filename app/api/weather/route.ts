@@ -156,7 +156,20 @@ export async function POST(req: Request) {
           };
         });
 
-      return respond({ timezone: fallbackJson.city?.timezone ?? null, lat, lon, current: null, daily });
+      const currentItem = Array.isArray(fallbackJson.list) ? fallbackJson.list[0] as {
+        main?: { temp?: number; feels_like?: number; humidity?: number; pressure?: number };
+        weather?: Array<{ description?: string; icon?: string; id?: number }>;
+        wind?: { speed?: number };
+      } : null;
+      const current = currentItem ? {
+        temp: currentItem.main?.temp ?? null,
+        feels_like: currentItem.main?.feels_like ?? currentItem.main?.temp ?? null,
+        humidity: currentItem.main?.humidity ?? null,
+        pressure: currentItem.main?.pressure ?? null,
+        weather: currentItem.weather ?? [],
+        wind_speed: currentItem.wind?.speed ?? null,
+      } : null;
+      return respond({ timezone: fallbackJson.city?.timezone ?? null, lat, lon, current, daily });
     }
 
     // default: return current weather (compatibility with existing callers)

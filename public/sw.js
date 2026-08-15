@@ -1,4 +1,4 @@
-const CACHE_NAME = "pangolin-x-v2";
+const CACHE_NAME = "pangolin-x-v3";
 const APP_SHELL = ["/manifest.webmanifest", "/Pangolin-x.png"];
 
 self.addEventListener("install", (event) => {

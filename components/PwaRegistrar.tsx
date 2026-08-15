@@ -13,7 +13,7 @@ export default function PwaRegistrar() {
     };
 
     navigator.serviceWorker.addEventListener("controllerchange", reloadForNewWorker);
-    navigator.serviceWorker.register("/sw.js").then((registration) => {
+    navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((registration) => {
       // Ask the browser to check for a newly deployed worker immediately,
       // rather than allowing an old cached shell to survive for a day.
       registration.update().catch(() => undefined);
