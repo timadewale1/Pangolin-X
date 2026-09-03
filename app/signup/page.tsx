@@ -103,7 +103,7 @@ export default function SignupPage() {
   const [stateSearch, setStateSearch] = useState("");
   const [lgaSearch, setLgaSearch] = useState("");
   const [farmPhotos, setFarmPhotos] = useState<string[]>([]);
-  const [uploadingSlot, setUploadingSlot] = useState<number | null>(null);
+  const [pendingFarmPhotos, setPendingFarmPhotos] = useState<Array<File | null>>([]);
   // removed unused detected state
 
   // Titles and languages used in the app
@@ -245,18 +245,29 @@ export default function SignupPage() {
   }
 
   async function uploadFarmPhoto(slot: number, file: File) {
-    const path = `farmPhotos/${formState.email || 'signup'}/${Date.now()}-${slot}-${file.name}`;
-    setUploadingSlot(slot);
-    const ref = storageRef(storage, path);
-    await uploadBytes(ref, file);
-    const url = await getDownloadURL(ref);
-    setFarmPhotos((current) => {
+    const previewUrl = URL.createObjectURL(file);
+    setPendingFarmPhotos((current) => {
       const next = [...current];
-      next[slot] = url;
+      next[slot] = file;
       return next.slice(0, 4);
     });
-    toast.success(`Farm photo ${slot + 1} uploaded`);
-    setUploadingSlot(null);
+    setFarmPhotos((current) => {
+      const next = [...current];
+      next[slot] = previewUrl;
+      return next.slice(0, 4);
+    });
+    toast.success(`Farm photo ${slot + 1} selected`);
+  }
+
+  async function uploadPendingFarmPhotos(uid: string) {
+    const urls = await Promise.all(pendingFarmPhotos.map(async (file, slot) => {
+      if (!file) return farmPhotos[slot] || "";
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const ref = storageRef(storage, `farmPhotos/${uid}/${Date.now()}-${slot}-${safeName}`);
+      await uploadBytes(ref, file);
+      return getDownloadURL(ref);
+    }));
+    return urls.filter(Boolean).slice(0, 4);
   }
 
   async function onSubmit() {
@@ -425,6 +436,7 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                           formState.password
                         );
                         const uid = create.user.uid;
+                        const uploadedFarmPhotos = await uploadPendingFarmPhotos(uid);
 
                         // compute nextPaymentDate based on selected package
                         const paidAt = new Date();
@@ -448,7 +460,7 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                           lat: formState.lat ?? null,
                           lon: formState.lon ?? null,
                           crops: formState.crops,
-                          farmPhotos,
+                          farmPhotos: uploadedFarmPhotos,
                           language: (formState && formState.language) ? formState.language : 'en',
                           title: (formState && formState.title) ? formState.title : '',
                           createdAt: paidAt.toISOString(),
@@ -489,6 +501,7 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
       // If we have a valid access code or coming back from successful payment, create account
       const create = await createUserWithEmailAndPassword(auth, formState.email, formState.password);
       const uid = create.user.uid;
+      const uploadedFarmPhotos = await uploadPendingFarmPhotos(uid);
 
       // if this creation happened after a payment return, compute nextPaymentDate
       const paidAt = new Date();
@@ -512,7 +525,7 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
         lat: formState.lat ?? null,
         lon: formState.lon ?? null,
         crops: formState.crops,
-        farmPhotos,
+        farmPhotos: uploadedFarmPhotos,
         language: (formState && formState.language) ? formState.language : "en",
         title: (formState && formState.title) ? formState.title : "",
         createdAt: paidAt.toISOString(),
@@ -694,10 +707,11 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                       onClick={() => toggleCrop(c.id)}
                       className={`flex items-center gap-3 p-2 border rounded text-left ${selected ? "border-green-600 bg-green-50" : ""}`}
                     >
-                      <div className="w-12 h-12 relative rounded overflow-hidden bg-gray-100">
-                        <Image src={c.img} alt={c.label} fill sizes="48px" style={{ objectFit: "cover" }} />
+                      <div className="relative h-12 w-12 overflow-hidden rounded bg-gray-100">
+                        <Image src={c.img} alt={c.label} fill sizes="48px" className="pointer-events-none object-cover" />
                       </div>
                       <div className="font-medium">{c.label}</div>
+                      <span className={`ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${selected ? "border-green-600 bg-green-600 text-white" : "border-gray-300 text-transparent"}`} aria-hidden="true">✓</span>
                     </button>
                   );
                 })}
@@ -716,7 +730,7 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                       <Image src={farmPhotos[slot]} alt={`Farm photo ${slot + 1}`} fill className="object-cover" />
                     ) : (
                       <div className="px-3 py-4 text-sm text-gray-500">
-                        {uploadingSlot === slot ? "Uploading..." : `Photo ${slot + 1}`}
+                        {`Photo ${slot + 1}`}
                       </div>
                     )}
                     <input
