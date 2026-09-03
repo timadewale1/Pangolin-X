@@ -30,6 +30,7 @@ export type FarmerDoc = {
   nextPaymentDate?: string | null;
   paymentReference?: string | null;
   createdAt?: string | null;
+  onboardingComplete?: boolean;
 };
 
 export type WeatherData = {

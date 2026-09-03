@@ -5,9 +5,16 @@ import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import DashboardTopbar from "@/components/dashboard/DashboardTopbar";
 import FarmChat from "@/components/dashboard/FarmChat";
 import { DashboardProvider, useDashboard } from "@/context/DashboardContext";
+import { useEffect } from "react";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { loading, authLoading } = useDashboard();
+  const { loading, authLoading, farm } = useDashboard();
+
+  useEffect(() => {
+    if (!loading && !authLoading && farm?.onboardingComplete === false) {
+      window.location.replace("/onboarding");
+    }
+  }, [loading, authLoading, farm?.onboardingComplete]);
 
   if (loading || authLoading) {
     return (

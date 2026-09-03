@@ -155,7 +155,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   const uploadPhoto = useCallback(async (file: File) => {
     if (!user) return null;
-    const path = `farmers/${user.uid}/profile-${Date.now()}-${file.name}`;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const path = `profilePictures/${user.uid}/profile-${Date.now()}-${safeName}`;
     const ref = storageRef(storage, path);
     const task = uploadBytesResumable(ref, file);
 
@@ -203,7 +204,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const uploadFarmPhoto = useCallback(async (file: File) => {
     if (!user) return null;
     if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) throw new Error("invalid_farm_photo");
-    const path = `farmers/${user.uid}/farm-${Date.now()}-${file.name}`;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const path = `farmPhotos/${user.uid}/farm-${Date.now()}-${safeName}`;
     const ref = storageRef(storage, path);
     const task = uploadBytesResumable(ref, file);
     const url = await new Promise<string>((resolve, reject) => task.on("state_changed", undefined, reject, async () => resolve(await getDownloadURL(task.snapshot.ref))));

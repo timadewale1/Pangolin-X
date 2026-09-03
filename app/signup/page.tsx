@@ -469,10 +469,11 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
                           ...(nextPaymentDate && { nextPaymentDate }),
                           plan: pkg ?? null,
                           accessCodeUsed: false,
+                          onboardingComplete: false,
                         });
 
-                        toast.success('Account created. Redirecting to login...');
-                        setTimeout(() => router.push('/login'), 900);
+                        toast.success('Account created. Let us finish your farm profile...');
+                        setTimeout(() => router.push('/onboarding'), 900);
                       } catch (e) {
                         console.error('Failed to create user after payment:', e);
                         toast.error('Failed to create account after payment');
@@ -534,6 +535,7 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
         ...(nextPaymentDate && { nextPaymentDate }),
         plan: paymentSuccessReturn ? (pkg ?? null) : null,
         accessCodeUsed: accessCodeValid ? true : false,
+        onboardingComplete: false,
       });
 
       // If access code was used, consume it now via server-side client endpoint (with ID token)
@@ -572,7 +574,7 @@ if (!paystackGlobal || typeof paystackGlobal.setup !== 'function') {
       }
 
       toast.success("Account created. Redirecting to login...");
-      setTimeout(() => router.push("/login"), 900);
+      setTimeout(() => router.push("/onboarding"), 900);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "message" in err) {
         toast.error((err as { message?: string }).message || "Signup failed");
